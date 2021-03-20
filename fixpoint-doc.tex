@@ -1,0 +1,289 @@
+\documentclass{article}
+
+\setlength{\parskip}{\baselineskip}
+\setlength{\parindent}{0 pt}
+
+\usepackage{fullpage, xspace, enumitem}
+
+\usepackage[pdfborder={.25 .25 .25}]{hyperref}
+
+\urlstyle{rm}
+
+\usepackage{microtype}
+
+\newcommand{\blob}{\textbf{Blob}\xspace}
+\newcommand{\blobs}{\textbf{Blob}s\xspace}
+\newcommand{\valuex}{\textbf{Value}\xspace}
+\newcommand{\valuexs}{\textbf{Value}s\xspace}
+\newcommand{\encode}{\textbf{Encode}\xspace}
+\newcommand{\thunk}{\textbf{Thunk}\xspace}
+\newcommand{\thunks}{\textbf{Thunk}s\xspace}
+\newcommand{\encodes}{\textbf{Encode}s\xspace}
+\newcommand{\name}{\textbf{Name}\xspace}
+\newcommand{\names}{\textbf{Name}s\xspace}
+
+\begin{document}
+
+\textbf{Computation in the Fixpoint OS}\newline
+Yuhan Deng, Sadjad Fouladi, Keith Winstein
+
+The intention behind Fixpoint was to follow the design of the SICP
+\href{https://mitpress.mit.edu/sites/default/files/sicp/full-text/book/book-Z-H-27.html#\%_sec_4.2.2}{``Interpreter
+  with Lazy Evaluation''} and support arbitrary computations on
+content-addressed data, including workloads like software compilation,
+unit testing, video encoding, one-off Python scripts that read a text
+file and write another text file, big data-analysis jobs, massively
+parallel jobs that benefit from 10,000 nodes, etc. We also want to
+support small functions with
+$<$50~ns overhead per invocation---meaning, without a context
+switch. We chose Wasm as the basic representation of computation
+because (1) LLVM can compile into it, which allows a huge amount of
+existing software to be expressed, (2) it can run at near-native speed
+(via \texttt{wasm2c} and a C compiler, reserving 8 GiB of virtual
+address space per invocation to make it impossible for the function to
+reference memory that doesn't belong to it), and (3) we can guarantee
+that computations are deterministic functions of their inputs and can
+memoize execution and apply transformations without altering the
+results.
+
+\vspace{0.5\baselineskip}
+{\Large \textbf{1. Types}}
+
+The basic type is a \valuex, an immutable vector of bytes. Each \valuex is one of two types:
+\begin{enumerate}[topsep=0pt]
+\item A \blob: an immutable vector of bytes with arbitrary contents
+
+\item A \thunk: a reference to a \blob that will be the output of a computation
+\end{enumerate}
+
+A \name is a string that identifies a \valuex. A \name contains either:
+\begin{enumerate}[topsep=0pt]
+\item A ``canonical name'': the SHA-256 hash of the contents of a \valuex
+
+\item A ``literal'': a \blob contained in the \name itself, or
+  
+\item A \thunk
+\end{enumerate}
+
+An \encode\footnote{For ``Explicit Named Computation On Data or
+  Encodes.''} is a \blob that describes the application of a function
+to a captured environment. It specifies:
+\begin{enumerate}[topsep=0pt]
+
+\item The ``function'', which is either:
+\begin{itemize}[topsep=0pt]
+\item the \name of a \blob that will be interpreted as a Wasm module in the binary format, along with the index of a function defined by the Wasm module, or
+\item the \name of a \blob that will be interpreted as an \encode, with its inputs prepended to those in this \encode
+\end{itemize}
+
+\item The ``strict inputs'': a list of \names that designate the
+  \blobs available to the function at runtime.\footnote{Because a
+    \name can be a \thunk, the input can refer to a \blob that hasn't been computed yet.}
+  
+\item The ``lazy inputs'': a list of \names that designate \valuexs
+  (not necessarily \blobs) that can be referenced in the function's
+  outputs. Neither the \names nor the contents of the referenced
+  \valuexs are accessible to the function, but the input can be
+  referred to in the function's outputs.\footnote{This can support
+    functions that do short-circuit evaluation, e.g. ``\texttt{if}''
+    or ``\texttt{and},'' while retaining the system's ability to
+    replace any \thunk with its \blob value at any point in a
+    computation without affecting the results. That is, without
+    full-blown fexprs.}
+
+\end{enumerate}
+  
+The inputs are identified by an \texttt{index}: a non-negative integer
+counting up from zero (the first input to the innermost
+function). Strict inputs, lazy inputs, and outputs are numbered
+separately.
+
+\newpage
+The format of a \thunk is:
+\begin{enumerate}[topsep=0pt]
+\item The \name of an \encode
+\item A type indicating whether the reference is to an output, strict input, or lazy input of the \encode
+\item A non-negative integer \texttt{index}
+  \end{enumerate}
+
+\vspace{0.5\baselineskip}
+{\Large \textbf{2. State}}
+
+The system maintains two mappings:
+\begin{itemize}[topsep=0pt]
+\item The ``storage'' maps a \name to the contents of the corresponding \valuex.
+
+\item The ``memoization cache'' maps a \thunk to a set of \names (ideally including the canonical name of the resulting \blob).
+\end{itemize}
+  
+\vspace{0.5\baselineskip}
+{\Large \textbf{3. Operations}}
+
+A \valuex can be ``forced.'' This is similar to what SICP calls the
+``\texttt{force-it}'' procedure. Forcing a \blob is the identity
+operation and does nothing. Forcing a \thunk retrieves its value: the
+corresponding \blob.
+
+To force a \thunk, the system can:
+\begin{itemize}[topsep=0pt]
+\item retrieve a memoized result from the memoization cache if available, or
+\item compute it, by:
+  \begin{enumerate}[topsep=0pt]
+  \item evaluating the \encode that the \thunk refers to
+  \item retrieving the identified output
+  \item optionally inserting an entry into the memoization cache, and
+  \item forcing the output in question until a \blob is the result
+  \end{enumerate}
+\end{itemize}
+
+To evaluate an \encode, the system will:
+\begin{enumerate}[topsep=0pt]
+\item force all the strict inputs of the \encode (optionally in parallel), transforming each input into a \blob
+\item apply the function to its inputs. This means running the Wasm function and allowing it to:
+\begin{itemize}[topsep=0pt]
+\item read the contents of any strict input
+\item modify the contents of any strict input. The function doesn't
+  know whether the runtime is implementing this by making a copy of
+  the input, or by allowing the function to mutate its only copy
+  (based on a guess that the \blob won't be referenced again
+  and can be recomputed if needed).
+\item insert arbitrary \valuexs into the storage, which are known as
+  the \encode's ``outputs.'' To avoid computing the hash of every
+  intermediate \valuex, the \valuex is inserted with a key that
+  is a \thunk containing the \name of the \encode and an output
+  \texttt{index} chosen by the function.
+\item insert a \thunk into the storage that refers to one of the
+  \encode's lazy inputs, even though the function doesn't know the \name of
+  the \encode, or the \name or contents of the lazy inputs---this is
+  necessary to preserve referential transparency and forbid cyclic references
+\end{itemize}
+\end{enumerate}
+
+The storage is never \emph{required} to compute the SHA-256 hash of a
+\valuex. However, to avoid storing duplicate long-lived \valuexs under
+different keys, the runtime will probably choose to hash any
+long-lived \valuex that is identified by a \thunk key, and replace the
+key with a canonical name, moving the original \thunk name to an entry
+in the memoization cache.
+
+\vspace{0.5\baselineskip}
+{\Large \textbf{4. Examples}}
+
+\textbf{Example I: Simple addition.} To add two numbers (e.g., 4 and
+7), the user can create an \texttt{add} function in Wasm that expects
+two inputs (\#0 and \#1) and writes to an output with an
+\texttt{index} of \#0. (We sometimes refer to output \#0 as the
+value ``returned'' by the \encode, but a \thunk can reference any
+output.) The user inserts this function into the storage under its
+canonical name (the SHA-256 hash of the Wasm module).
+
+The user then writes an \encode where:
+\begin{enumerate}[topsep=0pt]
+\item The function is the canonical name of the Wasm module (with the appropriate function index)
+\item The two strict inputs are the literal ``4'' and the literal ``7''
+\end{enumerate}
+The user inserts this \encode into the storage under its canonical
+name (the SHA-256 hash of the \encode).
+
+The user then writes a \thunk referring to the just-inserted \encode and output index \#0, and asks Fixpoint
+to force it. The result will be a \blob with the contents ``11''.
+
+\textbf{Example II: Input dependencies.} To compile and link a C program with two source files,
+the build system can create three \encodes:
+\begin{enumerate}[topsep=0pt]
+\item An \encode that preprocesses, compiles, and assembles the first source file to a \texttt{.o} file
+  (the \texttt{.c} file and all system headers are strict inputs, identified as \blobs)
+\item An \encode that does the same to produce the second \texttt{.o} file
+\item An \encode that links the \texttt{.o} files and produces an executable. The strict inputs will include \thunks corresponding to the output of the first two \encodes, plus all necessary libraries.
+\end{enumerate}
+
+When the user forces a \thunk that refers to the output of the last \encode, the system will need to force
+all its strict inputs before applying the function. This can compile each source file in parallel before linking.
+
+\textbf{Example III: Tail recursion.} To compute the $n$th Fibonacci number
+recursively, the user can write a \texttt{fib} function that
+takes one numerical argument.
+\begin{itemize}[topsep=0pt]
+\item \texttt{fib(1)} returns ``1''
+\item \texttt{fib(2)} returns ``1''
+  \item \texttt{fib(n)} (for $n>2$) creates three \encodes
+    representing \texttt{fib(n-1)}, \texttt{fib(n-2)}, and
+    \texttt{add} applied to the outputs of the previous two, and
+    returns a \thunk referring to the output of the \texttt{add}
+    \encode.
+    \end{itemize}
+
+If the user forces a \thunk referring to the output of \texttt{fib(200)}, the system will
+evaluate the \encode and the output will be another \thunk---which it will then force, in turn,
+until finally reaching a \blob answer.
+
+\textbf{Example IV: map operator.} The \texttt{map} function expects a
+lazy argument naming a function $f$, and a lazy argument for each item
+being mapped over.  It returns a \thunk representing the output of an
+\encode that concatenates a series of strict inputs, each one a \thunk
+representing the application of $f$ to one of the items.
+
+\textbf{Example V: special forms.} To implement an \texttt{if}
+operator, the user writes a function that expects one strict
+input (the predicate) and two lazy inputs (the consequent and
+alternative), and writes one output.
+
+The function examines the contents of the ``predicate'' input,
+interpreting it with whatever representation the application prefers. If true, the function writes a \thunk
+that refers to its ``consequent'' input. Otherwise, the function
+writes a \thunk that refers to its ``alternative'' input.
+
+\textbf{Example VI: short-circuiting ``and''.} To implement a
+short-circuiting \texttt{and} operator, the user writes a function
+that expects one strict input and one lazy input, and writes
+one output. The function returns a \thunk that expresses \texttt{if(\#0,
+  if(\#1, true, false), false)}.
+
+\textbf{Example VII: currying.} The \texttt{curry} function transforms
+a function $f$ of two arguments into a function $h$ of one argument,
+whose value is another function $g$ of one argument such that $h(x)(y) =
+g(y) = f(x,y)$.
+
+To implement this, the user creates two Wasm functions: \texttt{curry} and \texttt{partial-apply}.
+
+The \texttt{curry} function expects one strict input, corresponding to
+$f$.  The output is an \encode representing $h$. The function is
+\texttt{partial-apply} and there is one strict input, naming $f$.
+
+The \texttt{partial-apply} function expects two strict inputs,
+representing $f$ and $x$. The output is an \encode representing
+$g$. The function is $f$, and there is one strict input, naming $x$.
+
+Because \encodes can be used as functions and the inputs are appended,
+this allows the result of \texttt{curry($f$)} to be used as a function
+applied to $x$, which in turn can be applied to $y$. The inputs could
+also be provided in a different order, but then the $g$ function would
+need to return a thunk that reorders the inputs before giving them to
+the original $f$.
+
+\vspace{0.5\baselineskip}
+{\Large \textbf{5. Open questions}}
+
+\begin{enumerate}[topsep=0pt]
+\item How to handle I/O (random numbers, time, filesystem and network access, user interaction)
+
+\item When/how to garbage-collect from the storage or memoization cache
+
+\item Execution policy language separate from definition of a
+  computation (to describe data placement / parallelization policy,
+  garbage-collection policy, and when to give read-write access to
+  inputs to a function because a \valuex will not be referenced again)
+
+\item Does the approach to lazy inputs really ensure that a \thunk can
+  always be replaced by (1) any other \thunk that refers to the same
+  \blob, or (2) the referred-to \blob, without ever altering the
+  result of a computation? (We don't want a function to be able to
+  know if the runtime has or hasn't applied some optimization.) Does
+  the system also successfully prevent cyclic references (e.g., two \thunks that resolve to
+  each other)?
+  
+\item \ldots
+  
+\end{enumerate}
+
+\end{document}
