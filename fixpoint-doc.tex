@@ -42,10 +42,11 @@ applications, while guaranteeing at the OS level that functions remain
 deterministic functions of their input.  We chose WebAssembly as the
 basic representation of computation because (1) LLVM can compile into
 it, which allows many existing programs to be imported as functions,
-(2) it can run at near-native speed (via \texttt{wasm2c}), with
-$<$50~ns overhead per function invocation, and (3) the OS can
-guarantee that computations are deterministic and memoizable across
-machines.
+(2) it can run at near-native speed (via \texttt{wasm2c} $\rightarrow$
+\texttt{libclang}), and we expect that the overhead of a Wasm
+function invocation can be within an order of magnitude of a C++
+virtual function call, and (3) the OS can guarantee that computations
+are deterministic and memoizable across machines.
 
 \vspace{0.5\baselineskip}
 {\Large \textbf{1. Types}}
@@ -56,7 +57,7 @@ The basic type is an \object. Each \object is immutable, has one canonical repre
   \begin{enumerate}[topsep=0pt]
   \item A \blob: a vector of bytes
 
-  \item A \tree: a vector of \names
+  \item A \tree: a vector of \names, or
   \end{enumerate}
 
 \item A \thunk: a reference to a \valuex that will be the output of a computation
@@ -64,7 +65,7 @@ The basic type is an \object. Each \object is immutable, has one canonical repre
 
 A \name is a string that identifies an \object. A \name is either:
 \begin{enumerate}[topsep=0pt]
-\item A ``canonical name'': the SHA-256 hash of the \object's canonical representation
+\item A ``canonical name'': the SHA-256 hash of the \object's canonical representation, or
 
 \item A ``literal'': the canonical representation of the \object itself
 \end{enumerate}
@@ -76,7 +77,7 @@ to a captured environment, producing a \tree as output. It specifies:
 
 \item The ``function'', which is either:
 \begin{itemize}[topsep=0pt]
-\item the \name of a \blob that will be interpreted as a Wasm module in the binary format
+\item the \name of a \blob that will be interpreted as a Wasm module in the binary format, or
 \item the \name of a \tree that will be interpreted as an \encode, with its inputs prepended to those in the outer \encode
 \end{itemize}
 
@@ -128,17 +129,18 @@ Any \object can be ``forced.''
 \item Forcing a \thunk retrieves or computes the corresponding \valuex.
 \end{itemize}
   
-To force a \thunk, the system can:
+To force a \thunk, the system will:
 \begin{itemize}[topsep=0pt]
-\item retrieve a memoized result from the memoization cache if available, or
+\item retrieve a memoized reduction from the memoization cache, or
 \item compute it, by:
   \begin{enumerate}[topsep=0pt]
   \item evaluating the \encode that the \thunk refers to
+  \item optionally inserting entries into the memoization cache for each of the \encode's outputs, and
   \item retrieving the identified output
-  \item optionally inserting an entry into the memoization cache, and
-  \item forcing the output recursively until a \valuex is the result
   \end{enumerate}
 \end{itemize}
+
+Then forcing the output recursively until a \valuex is the result.
 
 To ``evaluate'' an \encode, the system will:
 \begin{enumerate}[topsep=0pt]
@@ -245,9 +247,8 @@ To implement this, the user creates two Wasm functions: \texttt{curry} and \text
 
 The \texttt{curry} function expects one strict input, corresponding to
 $f$.  The output is an \encode representing $h$. The function is
-\texttt{partial-apply} and there is one strict input, naming $f$.
-
-The \texttt{partial-apply} function expects two strict inputs,
+\texttt{partial-apply} and there is one strict input, naming $f$. The
+\texttt{partial-apply} function expects two strict inputs,
 representing $f$ and $x$. The output is an \encode representing
 $g$. The function is $f$, and there is one strict input, naming $x$.
 
@@ -262,6 +263,15 @@ the original $f$.
 {\Large \textbf{5. Open questions}}
 
 \begin{enumerate}[topsep=0pt]
+\item What is the latency overhead for a ``safe'' Wasm invocation, compared with a pure native function,
+  and compared with forking a process on Linux?
+
+\item What is the throughput overhead of running a C or C++ program
+  that was compiled by \texttt{clang} into Wasm $\rightarrow$
+  \texttt{wasm2c} $\rightarrow$ \texttt{libclang} $\rightarrow$
+  \texttt{x86-64} ELF object, compared with compiling by \texttt{clang}
+  directly into an \texttt{x86-64} ELF executable?
+
 \item How to handle I/O (random numbers, time, filesystem and network access, user interaction)
 
 \item When/how to garbage-collect from the storage or memoization cache
@@ -280,7 +290,11 @@ the original $f$.
   know if the runtime has or hasn't applied some optimization.) Does
   the system also successfully prevent cyclic references (e.g., two \thunks that resolve to
   each other)?
-  
+
+\item Can we run \texttt{clang.wasm} within Fixpoint, to compile
+  \texttt{clang} into Wasm, to make the system self-hosting? Can we bootstrap an entire Linux distribution
+  this way (perhaps following the Guix bootstrap dependency graph)?
+ 
 \item \ldots
   
 \end{enumerate}
