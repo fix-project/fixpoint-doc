@@ -1,6 +1,5 @@
 \documentclass{article}
 
-\setlength{\parskip}{\baselineskip}
 \setlength{\parindent}{0 pt}
 
 \usepackage{fullpage, xspace, enumitem}
@@ -20,6 +19,10 @@
 \newcommand{\encode}{\textbf{Encode}\xspace}
 \newcommand{\thunk}{\textbf{Thunk}\xspace}
 \newcommand{\thunks}{\textbf{Thunk}s\xspace}
+\newcommand{\blobthunk}{\textbf{Blob Thunk}\xspace}
+\newcommand{\blobthunks}{\textbf{Blob Thunk}s\xspace}
+\newcommand{\treethunk}{\textbf{Tree Thunk}\xspace}
+\newcommand{\treethunks}{\textbf{Tree Thunk}s\xspace}
 \newcommand{\encodes}{\textbf{Encode}s\xspace}
 \newcommand{\name}{\textbf{Name}\xspace}
 \newcommand{\names}{\textbf{Name}s\xspace}
@@ -27,114 +30,148 @@
 \newcommand{\trees}{\textbf{Tree}s\xspace}
 \newcommand{\pathx}{\textbf{Path}\xspace}
 \newcommand{\pathxs}{\textbf{Path}s\xspace}
+\newcommand{\bs}{\vspace{\baselineskip}}
 
 \begin{document}
+\thispagestyle{empty}
 
 \textbf{Computation in the Fixpoint OS}\newline
-Yuhan Deng, Sadjad Fouladi, Keith Winstein
+Yuhan Deng, Sadjad Fouladi, Keith Winstein (last updated: 12/24/2021)
 
-The intention behind Fixpoint was to follow the design of the SICP
+\bs
+
+Fixpoint is a ``deterministic operating system'' that roughly follows
+the design of the SICP
 \href{https://mitpress.mit.edu/sites/default/files/sicp/full-text/book/book-Z-H-27.html#\%_sec_4.2.2}{``Interpreter
-  with Lazy Evaluation''} and support arbitrary computations. The
-thinking is that if we can make the basic system lightweight and
-general enough, it can support a range of programming languages and
-applications, while guaranteeing at the OS level that functions remain
-deterministic functions of their input.  We chose WebAssembly as the
-basic representation of computation because (1) LLVM can compile into
-it, which allows many existing programs to be imported as functions,
-(2) it can run at near-native speed (via \texttt{wasm2c} $\rightarrow$
-\texttt{libclang}), and we expect that the overhead of a Wasm
-function invocation can be within an order of magnitude of a C++
-virtual function call, and (3) the OS can guarantee that computations
-are deterministic and memoizable across machines.
-
-\vspace{0.5\baselineskip}
-{\Large \textbf{1. Types}}
-
-The basic type is an \object. Each \object is immutable, has one canonical representation, and is either:
-\begin{enumerate}[topsep=0pt]
-\item A \valuex, which is either:
-  \begin{enumerate}[topsep=0pt]
-  \item A \blob: a vector of bytes
-
-  \item A \tree: a vector of \names, or
-  \end{enumerate}
-
-\item A \thunk: a reference to a \valuex that will be the output of a computation
-\end{enumerate}
-
-A \name is a string that identifies an \object. A \name is either:
-\begin{enumerate}[topsep=0pt]
-\item A ``canonical name'': the SHA-256 hash of the \object's canonical representation, or
-
-\item A ``literal'': the canonical representation of the \object itself
-\end{enumerate}
-
-An \encode\footnote{For ``Explicit Named Computation On Data or
-  Encodes.''} is a \tree that describes the application of a function
-to a captured environment, producing a \tree as output. It specifies:
-\begin{enumerate}[topsep=0pt]
-
-\item The ``function'', which is either:
-\begin{itemize}[topsep=0pt]
-\item the \name of a \blob that will be interpreted as a Wasm module in the binary format, or
-\item the \name of a \tree that will be interpreted as an \encode, with its inputs prepended to those in the outer \encode
-\end{itemize}
-
-\item The ``strict inputs'': a \tree that designates the
-  \valuexs available to the function at runtime.\footnote{Because a
-    \tree can contain \thunks, the input can refer to \valuexs that haven't been computed yet.}
-  
-\item The ``lazy inputs'': a \tree that designates \objects
-  (including \thunks) that the function can copy unmodified into its
-  output, without being able to inspect their \names or contents.\footnote{This can support
-    functions that do short-circuit evaluation, e.g. ``\texttt{if}''
-    or ``\texttt{and},'' while retaining the system's ability to
-    replace any \thunk with its value at any point in a
-    computation without affecting the results. That is, without
-    full-blown fexprs.}
-\end{enumerate}
-
-A \pathx is a vector of integer indexes that identifies an \object
-within a \tree and its descendents.
-
-\enlargethispage{\baselineskip}
-
-A \thunk refers to a \valuex that hasn't necessarily been computed yet. The format of a \thunk is:
-\begin{enumerate}[topsep=0pt]
-\item The \name of an \encode
-\item A \pathx to identify an \object within the \encode's output \tree
-  \end{enumerate}
+  with Lazy Evaluation''}. The data model is similar to a Git
+repository, one that can also represent computational relations
+between content-addressed objects: e.g., ``blob \texttt{<x>} is the
+output of computation \texttt{<y>} given tree \texttt{<z>} as input.''
+The intention is to support a range of applications, including
+pre-existing \textsc{posix} programs, and for the OS to provide
+``determinism-safety'': program execution is referentially
+transparent, and irreproducibility is considered an OS bug, even
+across different computers.\footnote{Not \emph{everything} can be
+referentially transparent---IO has to happen somewhere. Fixpoint has a
+context where IO is permitted, akin to an ``unsafe'' block in Rust,
+but the intention is to let programmers and users constrain and
+delimit the non-deterministic parts of a program, rather than allowing
+unrestricted IO to happen everywhere.} We envision cloud-computing
+providers offering ``computation as a service'': the customer provides
+a description of a computation, and the provider returns the answer
+for a fee, perhaps backed by an insurance policy that guarantees
+correctness.
 
 %\vspace{0.5\baselineskip}
-{\Large \textbf{2. State}}
+%{\Large \textbf{1. Types}}
 
-The system maintains two mappings:
-\begin{itemize}[topsep=0pt]
-\item The ``storage'' maps a \name to the contents of the corresponding \object.
+\section{Types}
 
-\item The ``memoization cache'' maps a \thunk to a set of \names, ideally identifying the resulting \valuex.
+\subsection{\objects, \valuexs, and \thunks}
+
+The basic type is an \object. Each \object is immutable, has one canonical representation, and is either:
+
+\begin{itemize}[itemsep=0pt]
+\item a \valuex, which is either:
+\begin{itemize}[itemsep=0pt]
+  \item a \blob: a vector of bytes, or
+
+  \item a \tree: a vector of entries, each containing:
+
+    \begin{enumerate}[topsep=0pt, itemsep=0pt]
+    \item a \name, and
+
+    \item a boolean indicating whether the entry is ``strict'' or ``lazy,''
+    \end{enumerate}
+\end{itemize}
+
+\item or a \thunk, which represents a particular \valuex by specifying
+  a way to compute it. Internally, a \thunk contains the \name of an \encode.
 \end{itemize}
   
-\vspace{0.5\baselineskip}
-{\Large \textbf{3. Operations}}
+\subsection{\names}
 
-Any \object can be ``forced.''
-\begin{itemize}[topsep=0pt]
+A \name is a structure that identifies an \object. A \name contains:
+\begin{enumerate}[itemsep=0pt]
+  \item a human-readable string, and
+  \item an unambiguous reference to a particular object, either:
+    \begin{itemize}[itemsep=0pt]
+    \item a ``canonical name'': the {\textsc SHA-256} hash of the \object's canonical representation, or
+    \item a ``literal'': the canonical representation of the \object itself.
+    \end{itemize}
+\end{enumerate}
+
+\enlargethispage{3\baselineskip}
+
+\subsection{\encodes}
+
+An \encode\footnote{For ``Explicit Named Computation On Data or
+\encodes.''} is a \tree that describes the application of a function
+to inputs, producing an \object as output. The first entry specifies the
+function, which is either:
+\begin{itemize}[itemsep=0pt]
+\item A \blob that contains a Wasm module, or
+\item An \encode.
+\end{itemize}
+
+The rest of the \encode's entries specify the inputs. A strict entry
+designates a \valuex that will be available to the function at
+runtime. A lazy entry designates an \object that the function can
+include in its output (as a lazy or strict entry), without being able
+to read its contents.\footnote{This can support functions that do
+short-circuit evaluation, e.g. ``\texttt{if}'' or ``\texttt{and},''
+while retaining the referential transparency of \thunks for their corresponding \valuexs. That
+is, without full-blown \texttt{fexprs}.}
+
+\bs
+
+We chose Wasm as the basic representation of computation because (1)
+LLVM can compile into it, which lets many existing programs and
+languages be used, (2) it can run at near-native speed, both in terms
+of throughput ($>85\%$ of native) and invocation latency ($<$~100~ns),
+and (3) it's possible to guarantee that computations are
+deterministic, at least within a microarchitectural
+family\footnote{One of the few sources of nondeterminism in Wasm is
+the freedom for the underlying microarchitecture, e.g.~x86-64 or ARM, to represent floating-point NaNs
+with different bitwise representations.}
+
+\section{State}
+
+The system maintains two global mappings:
+\begin{itemize}[topsep=0pt, itemsep=0pt]
+\item The ``storage'' maps a canonical name (SHA-256 hash) to the contents of the corresponding \object.
+
+\item The ``memoization cache'' maps a \thunk to a set of \names, all
+  of which refer to the same \valuex and are reductions of the
+  original \thunk. Ideally this set includes the \name of the
+  referred-to \valuex.
+\end{itemize}
+  
+\section{Operations}
+
+\subsection{Forcing}
+
+``Forcing'' is an operation from \objects to \valuexs.
+
+\begin{itemize}[itemsep=0pt]
 \item Forcing a \blob is the identity operation.
 
-\item Forcing a \tree forces each of its entries, optionally in
-  parallel, replacing the entry with the \name of the resulting \valuex.
+\item Forcing a \tree forces each of its \emph{strict} entries, optionally in
+  parallel, replacing the entry's name with the \name of the resulting \valuex.
 
-\item Forcing a \thunk retrieves or computes the corresponding \valuex.
+\item Forcing a \thunk resolves it to its referred-to \valuex.
 \end{itemize}
-  
-To force a \thunk, the system will:
-\begin{itemize}[topsep=0pt]
+
+\subsection{Reducing a \thunk (one step)}
+
+``Reducing'' a \thunk (one step) transforms it either to another \thunk of the same type, or to the eventual \valuex itself. To reduce a \thunk, the system will:
+\begin{itemize}[itemsep=0pt]
 \item retrieve a memoized reduction from the memoization cache, or
-\item compute it, by:
-  \begin{enumerate}[topsep=0pt]
-  \item evaluating the \encode that the \thunk refers to
+\item compute the reduction, by:
+  \begin{enumerate}[itemsep=0pt]
+  \item evaluating the \encode that the \thunk names
+  \item selecting the output \tree (if a \treethunk) or the first entry in the output \tree (if a \blobthunk)
+
   \item optionally inserting entries into the memoization cache for each of the \encode's outputs, and
   \item retrieving the identified output
   \end{enumerate}
@@ -143,10 +180,10 @@ To force a \thunk, the system will:
 Then forcing the output recursively until a \valuex is the result.
 
 To ``evaluate'' an \encode, the system will:
-\begin{enumerate}[topsep=0pt]
+\begin{enumerate}[itemsep=0pt]
 \item force the \encode's strict input \tree, transforming each input into a \valuex
 \item apply the function to its inputs. This means running the Wasm module's first function and letting it:
-\begin{itemize}[topsep=0pt]
+\begin{itemize}[itemsep=0pt]
 \item read the strict input \tree and retrieve any \valuex referred to
 \item modify the contents of any strict input\footnote{The function doesn't
   know whether the runtime is implementing this by making a copy of
@@ -165,8 +202,7 @@ identified by a literal key (including a \thunk), and replace the key
 with the canonical name. If the original key was a \thunk, this can be
 moved to an entry in the memoization cache.
 
-\vspace{0.5\baselineskip}
-{\Large \textbf{4. Examples}}
+\section{Examples}
 
 \textbf{Example I: Simple addition.} To add two numbers (e.g., 4 and
 7), the user can create an \texttt{add} function in Wasm that expects
@@ -177,7 +213,7 @@ storage under its canonical name (the SHA-256 hash of the Wasm
 module).
 
 The user then writes an \encode where:
-\begin{enumerate}[topsep=0pt]
+\begin{enumerate}[itemsep=0pt]
 \item The function is the canonical name of the Wasm module (with the appropriate function index)
 \item The two strict inputs are the literal \blob ``4'' and the literal \blob ``7''
 \end{enumerate}
@@ -189,7 +225,7 @@ to force it. The result will be a \blob with the contents ``11''.
 
 \textbf{Example II: Input dependencies.} To compile and link a C program with two source files,
 the build system can create three \encodes:
-\begin{enumerate}[topsep=0pt]
+\begin{enumerate}[itemsep=0pt]
 \item An \encode that preprocesses, compiles, and assembles the first source file to a \texttt{.o} file
   (the \texttt{.c} file and all system headers are in the strict input \tree)
 \item An \encode that does the same to produce the second \texttt{.o} file
@@ -202,7 +238,7 @@ the strict input \tree before applying the function. This can compile each sourc
 \textbf{Example III: Tail recursion.} To compute the $n$th Fibonacci number
 recursively, the user can write a \texttt{fib} function that
 takes one numerical argument.
-\begin{itemize}[topsep=0pt]
+\begin{itemize}[itemsep=0pt]
 \item \texttt{fib(1)} returns ``1''
 \item \texttt{fib(2)} returns ``1''
   \item \texttt{fib(n)} (for $n>2$) creates three \encodes
@@ -259,10 +295,9 @@ also be provided in a different order, in which case the $g$ function would
 need to return a thunk that reorders the inputs before giving them to
 the original $f$.
 
-\vspace{0.5\baselineskip}
-{\Large \textbf{5. Open questions}}
+\section{Open questions}
 
-\begin{enumerate}[topsep=0pt]
+\begin{enumerate}[itemsep=0pt]
 \item What is the latency overhead for a ``safe'' Wasm invocation, compared with a pure native function,
   and compared with forking a process on Linux?
 
