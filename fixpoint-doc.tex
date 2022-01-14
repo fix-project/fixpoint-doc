@@ -36,7 +36,7 @@
 \thispagestyle{empty}
 
 \textbf{Computation in the Fixpoint OS}\newline
-Yuhan Deng, Sadjad Fouladi, Keith Winstein (last updated: 12/24/2021)
+Yuhan Deng, Sadjad Fouladi, Keith Winstein (last updated: 1/14/2021)
 
 \bs
 
@@ -52,11 +52,11 @@ pre-existing \textsc{posix} programs, and for the OS to provide
 ``determinism-safety'': program execution is referentially
 transparent, and irreproducibility is considered an OS bug, even
 across different computers.\footnote{Not \emph{everything} can be
-referentially transparent---IO has to happen somewhere. Fixpoint has a
+referentially transparent---IO has to happen somewhere. Fixpoint does have a
 context where IO is permitted, akin to an ``unsafe'' block in Rust,
 but the intention is to let programmers and users constrain and
 delimit the non-deterministic parts of a program, rather than allowing
-unrestricted IO to happen everywhere.} We envision cloud-computing
+unrestricted IO to happen anywhere.} We envision cloud-computing
 providers offering ``computation as a service'': the customer provides
 a description of a computation, and the provider returns the answer
 for a fee, perhaps backed by an insurance policy that guarantees
@@ -88,20 +88,20 @@ The basic type is an \object. Each \object is immutable, has one canonical repre
 \item or a \thunk, which represents a particular \valuex by specifying
   a way to compute it. Internally, a \thunk contains the \name of an \encode.
 \end{itemize}
-  
+
+\object identity is defined by equality of the canonical representation.
+
 \subsection{\names}
 
-A \name is a structure that identifies an \object. A \name contains:
-\begin{enumerate}[itemsep=0pt]
-  \item a human-readable string, and
-  \item an unambiguous reference to a particular object, either:
+A \name identifies a particular \object by means of an unambiguous
+reference, either:
     \begin{itemize}[itemsep=0pt]
-    \item a ``canonical name'': the {\textsc SHA-256} hash of the \object's canonical representation, or
-    \item a ``literal'': the canonical representation of the \object itself.
+    \item a ``canonical name'': the \textsc{sha-256} hash of the \object's canonical representation, or
+    \item a ``local name'': a locally generated unique ID that identifies an \object
+    \item a ``literal'': the \object itself.
     \end{itemize}
-\end{enumerate}
 
-\enlargethispage{3\baselineskip}
+\names are opaque; two \names that identify the same \object are equivalent for purposes of computation.
 
 \subsection{\encodes}
 
@@ -114,14 +114,19 @@ function, which is either:
 \item An \encode.
 \end{itemize}
 
-The rest of the \encode's entries specify the inputs. A strict entry
-designates a \valuex that will be available to the function at
-runtime. A lazy entry designates an \object that the function can
-include in its output (as a lazy or strict entry), without being able
-to read its contents.\footnote{This can support functions that do
-short-circuit evaluation, e.g. ``\texttt{if}'' or ``\texttt{and},''
-while retaining the referential transparency of \thunks for their corresponding \valuexs. That
-is, without full-blown \texttt{fexprs}.}
+The second entry describes the resource limits at runtime (e.g.,
+pages of mutable memory).
+
+\bs
+
+At evaluation-time, the function has access to the \encode. A strict
+entry designates a \valuex that the function can read. A lazy entry
+refers to an \object that the function can include in its output (as a
+lazy or strict entry), without being able to read its
+contents.\footnote{This can support functions that do short-circuit
+evaluation, e.g. ``\texttt{if}'' or ``\texttt{and},'' while retaining
+the referential transparency of \thunks for their corresponding
+\valuexs. That is, without full-blown \texttt{fexprs}.}
 
 \bs
 
@@ -132,70 +137,85 @@ of throughput ($>85\%$ of native) and invocation latency ($<$~100~ns),
 and (3) it's possible to guarantee that computations are
 deterministic, at least within a microarchitectural
 family\footnote{One of the few sources of nondeterminism in Wasm is
-the freedom for the underlying microarchitecture, e.g.~x86-64 or ARM, to represent floating-point NaNs
+the freedom for the underlying microarchitecture, e.g.~x86-64 or \textsc{arm}, to represent floating-point NaNs
 with different bitwise representations.}
 
 \section{State}
 
-The system maintains two global mappings:
-\begin{itemize}[topsep=0pt, itemsep=0pt]
-\item The ``storage'' maps a canonical name (SHA-256 hash) to the contents of the corresponding \object.
+The system maintains several global mappings:
+\begin{itemize}[itemsep=0pt]
+\item The ``storage'' maps a \name to the contents of the corresponding \object.
 
-\item The ``memoization cache'' maps a \thunk to a set of \names, all
-  of which refer to the same \valuex and are reductions of the
-  original \thunk. Ideally this set includes the \name of the
-  referred-to \valuex.
+\item The ``memoization cache'' maps a \thunk to the \name of an \object that represents
+  a reduction of the original \thunk. This target may be either another \thunk, or the referred-to \valuex.
+
+\item The ``trace cache'' maps a \name to a human-readable string.
 \end{itemize}
-  
+
 \section{Operations}
+
+\begin{quote}
+\begin{quote}
+\textit{It has been said that the principal function of an operating system
+is to define a number of different names for the same object, so that it
+can  busy  itself  keeping  track of the relationship between all of the
+different names.} (David Clark, 1982\footnote{\href{https://www.rfc-editor.org/rfc/rfc814.html}{RFC 814}.})
+\end{quote}
+\end{quote}
 
 \subsection{Forcing}
 
-``Forcing'' is an operation from \objects to \valuexs.
+``Forcing'' is an function from \objects to \valuexs:
 
 \begin{itemize}[itemsep=0pt]
 \item Forcing a \blob is the identity operation.
 
-\item Forcing a \tree forces each of its \emph{strict} entries, optionally in
-  parallel, replacing the entry's name with the \name of the resulting \valuex.
+\item Forcing a \tree forces each of its strict entries, replacing the
+  entry's \name field with the \name of the resulting \valuex.
 
-\item Forcing a \thunk resolves it to its referred-to \valuex.
+\item Forcing a \thunk recursively reduces it to its referred-to \valuex.
 \end{itemize}
 
 \subsection{Reducing a \thunk (one step)}
 
-``Reducing'' a \thunk (one step) transforms it either to another \thunk of the same type, or to the eventual \valuex itself. To reduce a \thunk, the system will:
+``Reducing'' a \thunk transforms it to another \thunk or to the
+eventual \valuex. To do this, the system will:
 \begin{itemize}[itemsep=0pt]
 \item retrieve a memoized reduction from the memoization cache, or
 \item compute the reduction, by:
-  \begin{enumerate}[itemsep=0pt]
-  \item evaluating the \encode that the \thunk names
-  \item selecting the output \tree (if a \treethunk) or the first entry in the output \tree (if a \blobthunk)
-
-  \item optionally inserting entries into the memoization cache for each of the \encode's outputs, and
-  \item retrieving the identified output
+  \begin{enumerate}[topsep=0pt, itemsep=0pt]
+  \item evaluating the \encode that the \thunk names,
+  \item returning the \encode's output \object, and
+  \item optionally inserting an entry into the memoization cache from the \thunk to the output \object.
   \end{enumerate}
 \end{itemize}
 
-Then forcing the output recursively until a \valuex is the result.
+\subsection{Forcing a \thunk}
 
-To ``evaluate'' an \encode, the system will:
+Forcing a \thunk means:
 \begin{enumerate}[itemsep=0pt]
-\item force the \encode's strict input \tree, transforming each input into a \valuex
-\item apply the function to its inputs. This means running the Wasm module's first function and letting it:
-\begin{itemize}[itemsep=0pt]
-\item read the strict input \tree and retrieve any \valuex referred to
-\item modify the contents of any strict input\footnote{The function doesn't
-  know whether the runtime is implementing this by making a copy of
-  the input, or by allowing the function to mutate its only copy
-  (based on a guess that the \valuex won't be referenced again
-  and can be recomputed if needed).}
-\item add arbitrary \objects to the output \tree, with an arbitrary \pathx
-\item copy lazy inputs to arbitrary \pathxs in the output \tree
+\item reducing it, and
+\item if the resulting \object is a \thunk, forcing that \thunk in turn.
+\end{enumerate}
+
+\subsection{Evaluating an \encode}
+
+To evaluate an \encode, the system will:
+\begin{enumerate}[itemsep=0pt]
+\item force the \encode itself, transforming each strict entry into a \valuex
+\item run the Wasm module's entry function, providing it with imported host functions that let it:
+\begin{itemize}[itemsep=0pt, topsep=0pt]
+\item access any \tree or \blob named in a strict entry of the \encode (and the strict entries of any of those \trees, etc.)
+\item create new \objects (including \trees that reference lazy entries of the \encode)
+\item designate an \object as its output, and
+\item steal the storage backing an accessible \valuex and mutate it to create a new \valuex\footnote{The OS
+might implement this by making a copy of the \valuex, or by actually allowing
+the function to mutate the only copy---based on a guess that the \valuex won't be referenced
+again and can be recomputed-on-demand if that guess is wrong.}.
 \end{itemize}
 \end{enumerate}
 
-The storage is never \emph{required} to compute the SHA-256 hash of an
+The storage is never \emph{required} to compute the \textsc{sha-256} hash of an
 \object. However, to avoid storing duplicate long-lived \valuexs, the
 runtime will probably choose to hash any long-lived \object that is
 identified by a literal key (including a \thunk), and replace the key
@@ -209,7 +229,7 @@ moved to an entry in the memoization cache.
 two inputs and writes one output. (We sometimes refer to the first or
 sole output as the value ``returned'' by the \encode, but a \thunk can
 reference any output.)  The user inserts this function into the
-storage under its canonical name (the SHA-256 hash of the Wasm
+storage under its canonical name (the \textsc{sha-256} hash of the Wasm
 module).
 
 The user then writes an \encode where:
@@ -218,7 +238,7 @@ The user then writes an \encode where:
 \item The two strict inputs are the literal \blob ``4'' and the literal \blob ``7''
 \end{enumerate}
 The user inserts this \encode into the storage under its canonical
-name (the SHA-256 hash of the \encode).
+name (the \textsc{sha-256} hash of the \encode).
 
 The user then writes a \thunk referring to the just-inserted \encode and output index \#0, and asks Fixpoint
 to force it. The result will be a \blob with the contents ``11''.
