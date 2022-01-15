@@ -220,6 +220,23 @@ identified by a literal key (including a \thunk), and replace the key
 with the canonical name. If the original key was a \thunk, this can be
 moved to an entry in the memoization cache.
 
+\section{Safe transformations}
+
+We intend for the output of all computations to be invariant to:
+
+\begin{itemize}[itemsep=0pt]
+
+\item replacing any \thunk with its reduction, or
+
+\item replacing any \name with another \name that identifies the same \object.
+
+\end{itemize}
+
+As a result, functions cannot inspect the contents of \names or
+``inaccessible'' (lazy) entries---a function cannot tell if a lazy
+entry has already been forced or not, or if an \object has been hashed
+(to refer to it by its \textsc{sha-256} canonical name) or not.
+
 \section{Examples}
 
 \subsection{Simple addition} To add two numbers (e.g., 4 and
