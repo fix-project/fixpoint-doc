@@ -2,7 +2,7 @@
 
 \setlength{\parindent}{0 pt}
 
-\usepackage{fullpage, xspace, enumitem}
+\usepackage{fullpage, xspace, enumitem, graphicx}
 
 \usepackage[pdfborder={.25 .25 .25}]{hyperref}
 
@@ -33,10 +33,10 @@
 \newcommand{\bs}{\vspace{\baselineskip}}
 
 \begin{document}
-\thispagestyle{empty}
+%\thispagestyle{empty}
 
 \textbf{Computation in the Fixpoint OS}\newline
-Yuhan Deng, Sadjad Fouladi, Keith Winstein (last updated: 1/14/2021)
+Yuhan Deng, Sadjad Fouladi, Keith Winstein, with commentary by Amit Levy (last updated: 1/14/2021)
 
 \bs
 
@@ -311,25 +311,56 @@ that expects one strict input and any number of lazy inputs.
 
 \subsection{currying} The \texttt{curry} function transforms
 a function $f$ of two arguments into a function $h$ of one argument,
-whose value is another function $g$ of one argument such that $\texttt{curry}(f) = h$, $h(x) = g$, and $g(y) = f(x,y)$.
+whose value is another function $g$ of one argument such that $\texttt{curry}(f) \rightarrow h$, $h(x) \rightarrow g$, and $g(y) \rightarrow f(x,y)$.
 
 \bs
 
-To implement this, the user creates two Wasm functions: \texttt{curry}
-and \texttt{partial-apply}. The \texttt{curry} function expects one
-input corresponding to $f$. The output is an \encode representing
-$h$, in which the function is \texttt{partial-apply}
-with an additional entry naming $f$.
+The \texttt{curry} function expects one input corresponding to $f$,
+and an argument count. The output is an \encode representing
+$h$, in which the function is \texttt{curry} with an additional entry
+naming $f$ (Figure~\ref{fig:curry1}).
 
 \bs
 
 The user can now construct an \encode representing $h(x) = g$, in
-which the function entry is the $h$ \encode, and an \encode
-representing $g(y)$, in which the function entry is the $g$
-\encode. When evaluated, the \texttt{partial-apply} function finds the
-$f$ \valuex deep within the $h$ \encode, the $x$ \valuex within the
-$g$ \encode, and the $y$ \valuex within the top-level $g(y)$ \encode.
-Its output is a \thunk representing the output of a new \encode: $f(x,y)$.
+which the function entry is the $h$ \encode (Figure~\ref{fig:curry2}).
+Finally, when evaluating an \encode representing $g(y)$, enough
+arguments have been accumulated and the original fucntion can be
+invoked (Figure~\ref{fig:curry3}). The \texttt{curry} function finds
+the $f$ \valuex within the $h$ \encode, the $x$ \valuex within the $g$
+\encode, and the $y$ \valuex within the top-level $g(y)$ \encode.  Its
+output is a \thunk representing the output of a new \encode: $f(x,y)$.
+
+\begin{figure}[h!]
+  \begin{centering}
+    \includegraphics[height=60px]{curry1.pdf}
+
+  \end{centering}
+
+  \caption{Applying the \texttt{curry} function to a single argument $f$ produces a ``curried function'' $h$. The structure of $h$ is the same as the \encode that was evaluated.}
+  \label{fig:curry1}
+\end{figure}
+
+\begin{figure}[h!]
+  \begin{centering}
+    \includegraphics[height=60px]{curry2.pdf}
+
+  \end{centering}
+
+  \caption{Applying the $h$ function to an argument $x$ produces the new ``curried function'' $g$. The structure of $g$ is again the same as the \encode that was evaluated. Only
+  when both arguments are available can the original $f$ function be invoked.}
+  \label{fig:curry2}
+\end{figure}
+
+\begin{figure}[h!]
+  \begin{centering}
+    \includegraphics[height=60px]{curry3.pdf}
+
+  \end{centering}
+
+  \caption{Applying the $g$ function to an argument $y$ produces a \thunk for an \encode that computes $f(x, y)$.}
+  \label{fig:curry3}
+\end{figure}
 
 \section{Open questions}
 
@@ -377,5 +408,249 @@ Its output is a \thunk representing the output of a new \encode: $f(x,y)$.
 \item \ldots
   
 \end{enumerate}
+
+\section{Commentary by Amit Levy (4/11/2021)}
+
+In an attempt to understand the motivations behind some of the design
+choices in the document, I've tried to recreate it from (sort of)
+first-principles. This is useful for my own thought process but I also
+believe that some of the non-obvious choices might actually be
+important for answering some of the lingering questions you've
+listed. Much of this is a restatement of what is in the doc, so
+forgive the repetition. I'm also generalizing some, and specifying
+other, assumptions about what types are returned by certain operations
+because I couldn't really understand the reason behind the choices in
+the design doc. However, I don't think these are important
+distinctions. I've probably overlooked some detail or case but as far
+as I can tell the changes are merely a simplification. Obviously,
+please correct me if I'm wrong.
+
+\bs
+
+At a very high level, we want a system where computations are
+reproducible (at least by default), that are trivially memoizable,
+which are self-attesting, and which can take advantage of massive
+burst parallelism. The core idea is represent both data and
+computations as content-addressed objects.
+
+\bs
+
+At the very lowest level, as in git, all objects have values, that are
+arbitrary vectors of bytes, and names that are cryptographic hashes of
+the values. E.g.~Object.Name $leftarrow$ \textsc{sha256}(Object.Value)
+
+\bs
+
+Note that, so far, we do not need differentiate between ``Blobs''
+``Trees'' ``Encodes'' etc. Similarly, git's storage layer does not
+differentiate between trees, blobs, commits, etc. Instead, it's up to
+the git ``plumbing'' layer to interpret values according to their
+expected types. So: without considering computations, the only
+operations we need in the system so far are:
+
+\begin{itemize}
+\item    get(Object.Name) $\rightarrow$ Object.Value
+\item    put(Object.Value) $\rightarrow$ Object.Name
+\end{itemize}
+    
+Ok, but we'd also like to include computations in this model. Very
+much unlike git, these computations should be evaluated by the system
+(rather than the user) in order to enable large-scale burst
+parallelism. One simple way to add computation is to add a simple
+``evaluate'' operation, that asks the system to execute some
+computation---say Blob that happens to store executable Wasm. Let's
+try to do this with as little change to the system as possible.
+
+\bs
+
+Evaluate takes a reference (object name) to a computation with zero
+arguments (a thunk) that returns an object name (i.e. a 256-bit hash):
+``() $\rightarrow$ Object.Name''. So now we have three operations:
+
+\begin{itemize}
+\item    get(Object.Name) $\rightarrow$ Object.Value
+\item    put(Object.Value) $\rightarrow$ Object.Name
+\item    evaluate(Object.Name) $\rightarrow$ Object.Name
+\end{itemize}
+  
+To run a computation, we would first ``put'' it, then ``evaluate'' it
+by reference, then ``get'' the result. A single evaluation always runs
+in a single ``thread'' (for simplicity let's say a thread is tied to a
+CPU thread, though I think enabling internal parallelism is probably
+fine semantically and might be useful).
+
+\bs
+
+What is this computation permitted to do (in addition to normal
+operations on local state such as registers, zero-initialized memory,
+deterministic local file system, etc)? One option: it can perform
+arbitrary gets, puts, evaluates.
+
+\bs
+
+This allows some indirection (by ``evaluating'' other thunks), and
+allows the computation to return arbitrarily complex values (e.g., it
+can construct a ``tree'' by performing a bunch of puts of blobs and
+sub-trees, returning only the root of the tree), but does not give us
+a way to write functions that accept arguments. This, in turn,
+basically totally limits reuse.
+
+\bs
+
+Moreover, allowing arbitrary ``gets'' and ``evaluates'' within a
+computation means the system would have to allow a computation to
+block on I/O which\ldots well\ldots it seems bad\ldots we probably want to
+avoid taking up resources unnecessarily, and we can avoid it. (Note
+that puts from within the function need not result in blocking I/O,
+since there is no need to externalize them until after the the thunk
+is forced, so they can simply be stored locally in memory and
+persistent at the end).
+
+\bs
+
+So, to get rid of ``get''s, we can simply add arguments to computations. As suggested, the notion of a closure/Encode, addresses this problem nicely:
+
+\begin{verbatim}
+// Rust pseudo-code for an Encode (Rust so I can express types concisely).
+// `Object` and `Blob` both are actually SHA256 names, and the use of specific
+// types just communicates which kinds of Objects are allowed/assumed to be in each field.
+struct Encode {
+  arguments: Vec<dyn Object>,
+  function: Blob, // This blob needs to be WASM code
+}
+\end{verbatim}
+
+Now, rather than allowing the function to perform arbitrary ``gets''
+or ``evaluates,'' the function can refer, by index, to arguments that
+are pre-fetched from the underlying store upon execution.
+
+\bs
+
+Implementing ``42 + 24'' is simple (if a bit overkill). The a user's perspective:
+
+\bs
+
+\begin{verbatim}
+let a = put(42)
+let b = put(24)
+
+let addfunc = wasmc("return put(inputs[0] + inputs[1]);")
+let add = put(addfunc)
+
+let MyAddThunk = put(Encode {
+  arguments: vec![a, b],
+  function: add,
+}
+
+let aplusb = evaluate(MyAddThunk)
+assert(get(aplusb) == 66)
+\end{verbatim}
+
+But now we can't do recursion and (sort of as a result) we can't
+express parallel computations. While an Encode can construct (via
+``puts'') and then return another Encode, it can't force the system to
+evaluate it, since only users are permitted to call ``evaluate.''
+Considering this is one of the main goals of the system, that's a
+problem :).
+
+\bs
+
+There are at least two ways of addressing this---one way recursively
+evaluates the results of Encodes until a fixpoint (look at that!)
+while the other generates a computation DAG. I believe the system
+described in the doc uses both of these methods. Notably, Nix/Guix
+only use the former. I think there are important trade-offs here, so
+this is maybe a big part of the meat of the design choices.
+
+\bs
+
+First the Nix/Guix approach. (Note: I'll use Nix to describe this
+since I'm quite familiar with Nix and it's internals. It appears you
+all are more familiar with Guix, which I have basically no familiarity
+with beyond the documentation. I hope this isn't an issue as my
+understanding is that Guix is simply a straightforward translation of
+Nix from the the Nix expression language to Guile and that under the
+hood their representations of derivations are equivalent, but I'm not
+certain. So apologies in advance for any confusion this generates).
+
+\bs
+
+The key idea is to specify sub-computations, including recursive calls
+to the same function, explicitly in the Encode---in Nix and Guix the
+equivalent concept is called a derivation. In Nix, derivations have:
+
+\begin{itemize}
+
+\item    Input sources---these are references to blobs or tree (in Nix they are literally just paths in the nix store and can be either files or whole directories, but the point is they don't need to be evaluated)
+\item Input derivations---these are references to other derivations who's values the current derivation depends on to compute. This tells Nix that before evaluating this derivation, the values of the input derivations had better be available. For example, most Nix derivations include the "bash" derivation in their input derivations since they (by default) use bash to run their builder script.
+\item    Builder---this is sort of equivalent to ``function'' in Encodes. It's allowed to refer to a value that the output of one of the input derivations but can also itself be a value (e.g.~a blob that happens to be an executable).
+\end{itemize}
+
+The remaining fields in a Nix derivation (environment variables,
+platform, and outputs) are sort of incidental, and not important for
+this discussion, though worth thinking about for the next design
+iteration since there may be some useful lessons about the
+implementation details.
+
+\bs
+
+The encodes described in the design doc achieve something very similar
+by separating lazy and strict inputs. Strict inputs may include other
+encodes, which must be evaluated before evaluating the current Encode.
+
+\bs
+
+This structure has a number of benefits. It results in a
+pre-determined computational DAG. By inspecting the derivations (or in
+our case Encodes) recursively---which does not require actually
+executing the Encodes---the system can generate a complete DAG,
+determine an execution plan, execute dependencies in parallel etc.
+
+\bs
+
+Unsurprisingly (since this is the main goal of Nix/Guix), it's pretty
+well suited for compiling code and its dependencies, structuring file
+system heirarchies, etc. Example II in the design doc is a good
+illustration of this. I believe anything that is basically a big
+fan-out / fan-in works here.
+
+\bs
+
+One downside is that something needs to compute this DAG before
+anything can actually be executed, and these DAGs can be reasonably
+large. Perhaps computing the DAG can itself be an Encode somehow?
+Idk\ldots
+
+\bs
+
+The second downside, is that we're limited to computations that can be totally unrolled. I.e., I don't believe we can compute fibonacci with using just these dependencies.
+
+\bs
+
+So, this is where the second method used in the design doc comes
+in. Here, the system also forces whatever is returned from the
+Encode. This means that an encode can produce an arbitrary,
+data-dependent, new encode, return it, and it will be forced by the
+system.
+
+\bs
+
+This is quite elegant and indeed can express any tail recursive computation (which, correct me if I'm wrong, is all computations). Awesome!
+
+\bs
+
+The main downside is that we can very easily end up with runaway
+recursion and, in a potentially non-interactive system, we probably
+need some way of dealing with this. It also potentially complicates
+resource allocation since it means we don't have as much foresight
+into what resources an Encode will use, how much parallelism, etc.
+
+\bs
+
+I also believe it complicates questions 6 \& 9. In Nix/Guix style
+derivations, I believe the answers to these questions are relatively
+straight forward, but with tail recursion garbage collection roots
+seem trickier to define and I whether thunks can be cyclic is also
+unclear to me.
 
 \end{document}
