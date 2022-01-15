@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="640"
+   height="177.36784"
+   viewBox="0 0 169.33333 46.928575"
+   version="1.1"
+   id="svg5"
+   inkscape:version="1.1.1 (3bf5ae0d25, 2021-09-20)"
+   sodipodi:docname="curry1.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview7"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:document-units="mm"
+     showgrid="false"
+     units="px"
+     width="640px"
+     inkscape:zoom="1.6090971"
+     inkscape:cx="328.13433"
+     inkscape:cy="127.08991"
+     inkscape:window-width="1920"
+     inkscape:window-height="1031"
+     inkscape:window-x="0"
+     inkscape:window-y="25"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0" />
+  <defs
+     id="defs2">
+    <marker
+       style="overflow:visible"
+       id="Arrow1Lend"
+       refX="0"
+       refY="0"
+       orient="auto"
+       inkscape:stockid="Arrow1Lend"
+       inkscape:isstock="true">
+      <path
+         transform="matrix(-0.8,0,0,-0.8,-10,0)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 0,0 5,-5 -12.5,0 5,5 Z"
+         id="path25053" />
+    </marker>
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-3.316002,-29.897459)">
+    <text
+       xml:space="preserve"
+       style="font-size:10.5833px;line-height:1.25;font-family:'ACaslon Regular';-inkscape-font-specification:'ACaslon Regular, ';letter-spacing:0px;stroke-width:0.264583"
+       x="66.320457"
+       y="67.643463"
+       id="text3929-4-7"><tspan
+         sodipodi:role="line"
+         id="tspan3927-7-4"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:FreeSans;-inkscape-font-specification:FreeSans;stroke-width:0.264583"
+         x="66.320457"
+         y="67.643463" /></text>
+    <text
+       xml:space="preserve"
+       style="font-size:10.5833px;line-height:1.25;font-family:'ACaslon Regular';-inkscape-font-specification:'ACaslon Regular, ';letter-spacing:0px;stroke-width:0.264583"
+       x="14.237996"
+       y="37.803928"
+       id="text20950"><tspan
+         sodipodi:role="line"
+         id="tspan20948"
+         style="stroke-width:0.264583"
+         x="14.237996"
+         y="37.803928">curry(f, 2)</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:10.5833px;line-height:1.25;font-family:'ACaslon Regular';-inkscape-font-specification:'ACaslon Regular, ';letter-spacing:0px;stroke-width:0.264583"
+       x="138.42393"
+       y="39.101002"
+       id="text23960"><tspan
+         sodipodi:role="line"
+         id="tspan23958"
+         style="stroke-width:0.264583"
+         x="138.42393"
+         y="39.101002">h</tspan></text>
+    <path
+       style="fill:none;stroke:#000000;stroke-width:0.396875;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow1Lend)"
+       d="M 60.082492,35.289878 H 133.5659"
+       id="path25015" />
+    <g
+       id="g41950"
+       transform="translate(-3.7041668)">
+      <ellipse
+         style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.529167;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;stop-color:#000000"
+         id="path18491"
+         cx="38.942928"
+         cy="63.5"
+         rx="31.296158"
+         ry="13.06145" />
+      <g
+         id="g18462"
+         transform="translate(-18.47013,40.0497)">
+        <rect
+           style="fill:#d4d4d4;fill-opacity:1;stroke:#000000;stroke-width:0.529167;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;stop-color:#000000"
+           id="rect11031"
+           width="27.419271"
+           height="11.88879"
+           x="32.386375"
+           y="17.505905" />
+        <text
+           xml:space="preserve"
+           style="font-size:10.5833px;line-height:1.25;font-family:'ACaslon Regular';-inkscape-font-specification:'ACaslon Regular, ';letter-spacing:0px;stroke-width:0.264583"
+           x="34.427948"
+           y="26.042824"
+           id="text3929"><tspan
+             sodipodi:role="line"
+             id="tspan3927"
+             style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:FreeSans;-inkscape-font-specification:FreeSans;stroke-width:0.264583"
+             x="34.427948"
+             y="26.042824">curry</tspan></text>
+      </g>
+      <g
+         id="g11116-5"
+         transform="translate(3.2995944,40.0497)">
+        <rect
+           style="fill:#d4d4d4;fill-opacity:1;stroke:#000000;stroke-width:0.529167;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;stop-color:#000000"
+           id="rect11031-5"
+           width="5.806335"
+           height="11.88879"
+           x="43.327591"
+           y="17.505905" />
+        <text
+           xml:space="preserve"
+           style="font-size:10.5833px;line-height:1.25;font-family:'ACaslon Regular';-inkscape-font-specification:'ACaslon Regular, ';letter-spacing:0px;stroke-width:0.264583"
+           x="44.614349"
+           y="27.323788"
+           id="text3929-4"><tspan
+             sodipodi:role="line"
+             id="tspan3927-7"
+             style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:FreeSans;-inkscape-font-specification:FreeSans;stroke-width:0.264583"
+             x="44.614349"
+             y="27.323788">f</tspan></text>
+      </g>
+      <g
+         id="g41935"
+         transform="translate(-7.3085113,-0.26997545)">
+        <rect
+           style="fill:#d4d4d4;fill-opacity:1;stroke:#000000;stroke-width:0.529167;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;stop-color:#000000"
+           id="rect11031-5-4"
+           width="5.806335"
+           height="11.88879"
+           x="65.033699"
+           y="57.825581" />
+        <text
+           xml:space="preserve"
+           style="font-size:10.5833px;line-height:1.25;font-family:'ACaslon Regular';-inkscape-font-specification:'ACaslon Regular, ';letter-spacing:0px;stroke-width:0.264583"
+           x="65.456741"
+           y="67.258125"
+           id="text40350"><tspan
+             sodipodi:role="line"
+             id="tspan40348"
+             style="stroke-width:0.264583"
+             x="65.456741"
+             y="67.258125">2</tspan></text>
+      </g>
+    </g>
+    <g
+       id="g41950-7"
+       transform="translate(102.37433)">
+      <ellipse
+         style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.529167;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;stop-color:#000000"
+         id="path18491-9"
+         cx="38.942928"
+         cy="63.5"
+         rx="31.296158"
+         ry="13.06145" />
+      <g
+         id="g18462-7"
+         transform="translate(-18.47013,40.0497)">
+        <rect
+           style="fill:#d4d4d4;fill-opacity:1;stroke:#000000;stroke-width:0.529167;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;stop-color:#000000"
+           id="rect11031-4"
+           width="27.419271"
+           height="11.88879"
+           x="32.386375"
+           y="17.505905" />
+        <text
+           xml:space="preserve"
+           style="font-size:10.5833px;line-height:1.25;font-family:'ACaslon Regular';-inkscape-font-specification:'ACaslon Regular, ';letter-spacing:0px;stroke-width:0.264583"
+           x="34.427948"
+           y="26.042824"
+           id="text3929-9"><tspan
+             sodipodi:role="line"
+             id="tspan3927-1"
+             style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:FreeSans;-inkscape-font-specification:FreeSans;stroke-width:0.264583"
+             x="34.427948"
+             y="26.042824">curry</tspan></text>
+      </g>
+      <g
+         id="g11116-5-7"
+         transform="translate(3.2995944,40.0497)">
+        <rect
+           style="fill:#d4d4d4;fill-opacity:1;stroke:#000000;stroke-width:0.529167;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;stop-color:#000000"
+           id="rect11031-5-0"
+           width="5.806335"
+           height="11.88879"
+           x="43.327591"
+           y="17.505905" />
+        <text
+           xml:space="preserve"
+           style="font-size:10.5833px;line-height:1.25;font-family:'ACaslon Regular';-inkscape-font-specification:'ACaslon Regular, ';letter-spacing:0px;stroke-width:0.264583"
+           x="44.614349"
+           y="27.323788"
+           id="text3929-4-6"><tspan
+             sodipodi:role="line"
+             id="tspan3927-7-0"
+             style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:FreeSans;-inkscape-font-specification:FreeSans;stroke-width:0.264583"
+             x="44.614349"
+             y="27.323788">f</tspan></text>
+      </g>
+      <g
+         id="g41935-8"
+         transform="translate(-7.3085113,-0.26997545)">
+        <rect
+           style="fill:#d4d4d4;fill-opacity:1;stroke:#000000;stroke-width:0.529167;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;stop-color:#000000"
+           id="rect11031-5-4-5"
+           width="5.806335"
+           height="11.88879"
+           x="65.033699"
+           y="57.825581" />
+        <text
+           xml:space="preserve"
+           style="font-size:10.5833px;line-height:1.25;font-family:'ACaslon Regular';-inkscape-font-specification:'ACaslon Regular, ';letter-spacing:0px;stroke-width:0.264583"
+           x="65.456741"
+           y="67.258125"
+           id="text40350-3"><tspan
+             sodipodi:role="line"
+             id="tspan40348-9"
+             style="stroke-width:0.264583"
+             x="65.456741"
+             y="67.258125">2</tspan></text>
+      </g>
+    </g>
+  </g>
+</svg>
