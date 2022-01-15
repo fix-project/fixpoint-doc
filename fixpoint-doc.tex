@@ -93,12 +93,12 @@ The basic type is an \object. Each \object is immutable, has one canonical repre
 
 \subsection{\names}
 
-A \name identifies a particular \object by means of an unambiguous
+A \name is a string that identifies a particular \object by means of an unambiguous
 reference, either:
     \begin{itemize}[itemsep=0pt]
-    \item a ``canonical name'': the \textsc{sha-256} hash of the \object's canonical representation, or
-    \item a ``local name'': a locally generated unique ID that identifies an \object
-    \item a ``literal'': the \object itself.
+    \item a ``canonical name'': the \textsc{sha-256} hash of the \object's canonical representation,
+    \item a ``local name'': a locally generated unique ID that identifies an \object, or
+    \item a ``literal'': the canonical representation of the \object itself.
     \end{itemize}
 
 \names are opaque; two \names that identify the same \object are equivalent for purposes of computation.
@@ -107,25 +107,22 @@ reference, either:
 
 An \encode\footnote{For ``Explicit Named Computation On Data or
 \encodes.''} is a \tree that describes the application of a function
-to inputs, producing an \object as output. The first entry specifies the
-function, which is either:
+to inputs, producing an \object as output. The first entry specifies
+the resource limits at runtime (e.g., maximum pages of mutable memory). The second entry
+species the function, which is either:
 \begin{itemize}[itemsep=0pt]
 \item A \blob that contains a Wasm module, or
 \item An \encode.
 \end{itemize}
 
-The second entry describes the resource limits at runtime (e.g.,
-pages of mutable memory).
-
-\bs
-
-At evaluation-time, the function has access to the \encode. A strict
-entry designates a \valuex that the function can read. A lazy entry
-refers to an \object that the function can include in its output (as a
-lazy or strict entry), without being able to read its
-contents.\footnote{This can support functions that do short-circuit
-evaluation, e.g. ``\texttt{if}'' or ``\texttt{and},'' while retaining
-the referential transparency of \thunks for their corresponding
+At evaluation-time, the function can read any ``accessible \valuex'' in
+the \encode---which means any strict entry of the \encode, and any
+strict entry of an ``accessible'' \tree. A lazy entry refers to an
+\object that the function can include in its output (as a lazy or
+strict entry), without being able to read its contents.\footnote{This
+can support functions that do short-circuit evaluation,
+e.g. ``\texttt{if}'' or ``\texttt{and},'' while retaining the
+referential transparency of \thunks for their corresponding
 \valuexs. That is, without full-blown \texttt{fexprs}.}
 
 \bs
@@ -205,13 +202,14 @@ To evaluate an \encode, the system will:
 \item force the \encode itself, transforming each strict entry into a \valuex
 \item run the Wasm module's entry function, providing it with imported host functions that let it:
 \begin{itemize}[itemsep=0pt, topsep=0pt]
-\item access any \tree or \blob named in a strict entry of the \encode (and the strict entries of any of those \trees, etc.)
-\item create new \objects (including \trees that reference lazy entries of the \encode)
-\item designate an \object as its output, and
+\item access any ``accessible \valuex'' from the \encode,
+\item create new \objects (including \trees that reference lazy inputs),
+\item designate an \object as its output,
 \item steal the storage backing an accessible \valuex and mutate it to create a new \valuex\footnote{The OS
 might implement this by making a copy of the \valuex, or by actually allowing
 the function to mutate the only copy---based on a guess that the \valuex won't be referenced
-again and can be recomputed-on-demand if that guess is wrong.}.
+again and can be recomputed-on-demand if that guess is wrong.}, and
+\item insert entries into the trace cache that attach human-readable names to the \objects it creates.
 \end{itemize}
 \end{enumerate}
 
@@ -224,96 +222,114 @@ moved to an entry in the memoization cache.
 
 \section{Examples}
 
-\textbf{Example I: Simple addition.} To add two numbers (e.g., 4 and
+\subsection{Simple addition} To add two numbers (e.g., 4 and
 7), the user can create an \texttt{add} function in Wasm that expects
-two inputs and writes one output. (We sometimes refer to the first or
-sole output as the value ``returned'' by the \encode, but a \thunk can
-reference any output.)  The user inserts this function into the
-storage under its canonical name (the \textsc{sha-256} hash of the Wasm
-module).
+two \blobs as inputs and writes one \blob as output.
+
+\bs
 
 The user then writes an \encode where:
 \begin{enumerate}[itemsep=0pt]
-\item The function is the canonical name of the Wasm module (with the appropriate function index)
-\item The two strict inputs are the literal \blob ``4'' and the literal \blob ``7''
+\item The function is the Wasm module
+\item The runtime mutable-memory limit is one page
+\item The next entries are the literal \blob ``4'' and the literal \blob ``7''
 \end{enumerate}
-The user inserts this \encode into the storage under its canonical
-name (the \textsc{sha-256} hash of the \encode).
 
-The user then writes a \thunk referring to the just-inserted \encode and output index \#0, and asks Fixpoint
-to force it. The result will be a \blob with the contents ``11''.
+The user then writes a \thunk referring to the just-inserted \encode,
+and asks Fixpoint to force it. The result will be a \blob with the
+contents ``11''.
 
-\textbf{Example II: Input dependencies.} To compile and link a C program with two source files,
+\subsection{Dependencies computed in parallel} To compile and link a C program with two source files,
 the build system can create three \encodes:
 \begin{enumerate}[itemsep=0pt]
-\item An \encode that preprocesses, compiles, and assembles the first source file to a \texttt{.o} file
-  (the \texttt{.c} file and all system headers are in the strict input \tree)
-\item An \encode that does the same to produce the second \texttt{.o} file
-\item An \encode that links the \texttt{.o} files and produces an executable. The strict inputs will include \thunks corresponding to the output of the first two \encodes, plus all necessary libraries.
+\item An \encode that preprocesses, compiles, and assembles the first \texttt{.c} file to a \texttt{.o} file
+  (the \texttt{.c} file and system headers are accessible inputs)
+\item An \encode that does the same to produce the second \texttt{.o} file from the second \texttt{.c} file
+\item An \encode that links the \texttt{.o} files and produces an executable. The strict inputs include \thunks corresponding to the output of the first two \encodes.
 \end{enumerate}
 
-When the user forces a \thunk that refers to the output of the last \encode, the system will need to force
-the strict input \tree before applying the function. This can compile each source file in parallel before linking.
+When the user forces a \thunk that refers to the last \encode, the
+system will need to force the strict inputs before applying the
+function. This can compile each source file in parallel before
+linking.
 
-\textbf{Example III: Tail recursion.} To compute the $n$th Fibonacci number
+\subsection{Tail recursion} To compute the $n$th Fibonacci number
 recursively, the user can write a \texttt{fib} function that
 takes one numerical argument.
 \begin{itemize}[itemsep=0pt]
-\item \texttt{fib(1)} returns ``1''
-\item \texttt{fib(2)} returns ``1''
-  \item \texttt{fib(n)} (for $n>2$) creates three \encodes
-    representing \texttt{fib(n-1)}, \texttt{fib(n-2)}, and
-    \texttt{add} applied to the outputs of the previous two, and
-    returns a \thunk referring to the output of the \texttt{add}
-    \encode.
+\item \texttt{fib(1)} returns the \blob ``1''
+\item \texttt{fib(2)} returns the \blob ``1''
+  \item \texttt{fib(n)} (for $n>2$) creates two \encodes
+    representing \texttt{fib(n-1)} and \texttt{fib(n-2)}.
+    Then it outputs a \thunk referring to an \encode that represents
+    the \texttt{add} function applied to \thunks of the previous two \encodes.
     \end{itemize}
 
 If the user forces a \thunk referring to the output of \texttt{fib(200)}, the system will
 evaluate the \encode and the output will be another \thunk---which it will then force, in turn,
 until finally reaching a \blob answer.
 
-\textbf{Example IV: map operator.} The \texttt{map} function expects
-two lazy inputs: the function $f$, and a \tree being mapped over.  It
-returns a \tree where each entry is a \thunk representing the application of $f$ to the corresponding
-entry in the mapped-over \tree.
+\subsection{Unix-like directories and Git-like trees}
 
-\textbf{Example V: special forms.} To implement an \texttt{if}
-operator, the user writes a function that expects one strict
-input (the predicate) and two lazy inputs (the consequent and
-alternative), and writes one output.
+In Unix directories and Git trees, each entry has a human-readable
+name associated with it. In Fixpoint, \tree entries are unnamed. (Two
+\trees that refer to the same \objects in the same order are the same
+\tree.) A Unix- or Git-like filesystem could be represented in a
+Fixpoint \tree by storing a name-to-index mapping in the first entry,
+followed by the actual entries. Fixpoint would be agnostic to the
+precise representation of the name-to-index mapping.
+
+\subsection{map operator} The \texttt{map} function expects
+two inputs: the function $f$, and a \tree of lazy entries to be mapped
+over. It returns a \tree where each entry is a \thunk representing the
+application of $f$ to the corresponding entry in the mapped-over
+\tree.
+
+\subsection{special forms} To implement an \texttt{if}
+operator, the user writes a function that expects one strict input
+(the predicate) and two lazy inputs (the consequent and alternative),
+and writes one output.
+
+\bs
 
 The function examines the contents of the ``predicate'' input,
 interpreting it with whatever representation the user (or their
-programming language) prefers. If true, the function writes a \thunk
-that refers to its ``consequent'' input. Otherwise, the function
-writes a \thunk that refers to its ``alternative'' input.
+programming language) prefers. If true, the function outputs its
+``consequent'' input. Otherwise, the function outputs its
+``alternative'' input.
 
-\textbf{Example VI: short-circuiting ``and''.} To implement a
+\subsection{short-circuiting ``and''} To implement a
 short-circuiting \texttt{and} operator, the user writes a function
-that expects one strict input and one lazy input, and writes
-one output. The function returns a \thunk that expresses \texttt{if(\#0,
-  if(\#1, true, false), false)}.
+that expects one strict input and any number of lazy inputs.
 
-\textbf{Example VII: currying.} The \texttt{curry} function transforms
+\begin{itemize}[itemsep=0pt]
+\item \texttt{and()} returns \texttt{true}
+\item \texttt{and($x$)} returns the truth value of $x$
+\item \texttt{and($x$, $y$, \ldots)} returns \texttt{false} if $x$ is false, or otherwise returns a \thunk referring to an 
+\encode representing \texttt{and($y$, \ldots)} where $y$ has been rewritten as a strict entry.
+\end{itemize}
+
+\subsection{currying} The \texttt{curry} function transforms
 a function $f$ of two arguments into a function $h$ of one argument,
-whose value is another function $g$ of one argument such that $h(x)(y) =
-g(y) = f(x,y)$.
+whose value is another function $g$ of one argument such that $\texttt{curry}(f) = h$, $h(x) = g$, and $g(y) = f(x,y)$.
 
-To implement this, the user creates two Wasm functions: \texttt{curry} and \texttt{partial-apply}.
+\bs
 
-The \texttt{curry} function expects one strict input, corresponding to
-$f$.  The output is an \encode representing $h$. The function is
-\texttt{partial-apply} and there is one strict input, naming $f$. The
-\texttt{partial-apply} function expects two strict inputs,
-representing $f$ and $x$. The output is an \encode representing
-$g$. The function is $f$, and there is one strict input, naming $x$.
+To implement this, the user creates two Wasm functions: \texttt{curry}
+and \texttt{partial-apply}. The \texttt{curry} function expects one
+input corresponding to $f$. The output is an \encode representing
+$h$, in which the function is \texttt{partial-apply}
+with an additional entry naming $f$.
 
-Because \encodes can be used as functions and the inputs are appended,
-this allows the result of \texttt{curry($f$)} to be used as a function
-applied to $x$, which in turn can be applied to $y$. The inputs could
-also be provided in a different order, in which case the $g$ function would
-need to return a thunk that reorders the inputs before giving them to
-the original $f$.
+\bs
+
+The user can now construct an \encode representing $h(x) = g$, in
+which the function entry is the $h$ \encode, and an \encode
+representing $g(y)$, in which the function entry is the $g$
+\encode. When evaluated, the \texttt{partial-apply} function finds the
+$f$ \valuex deep within the $h$ \encode, the $x$ \valuex within the
+$g$ \encode, and the $y$ \valuex within the top-level $g(y)$ \encode.
+Its output is a \thunk representing the output of a new \encode: $f(x,y)$.
 
 \section{Open questions}
 
@@ -327,17 +343,21 @@ the original $f$.
   \texttt{x86-64} ELF object, compared with compiling by \texttt{clang}
   directly into an \texttt{x86-64} ELF executable?
 
-\item How to handle I/O (random numbers, time, filesystem and network access, user interaction)
+\item What should be the precise ``Fixpoint API'' exposed to Wasm via imported host functions that lets a function read the accessible \valuexs, create new \objects,
+  create \trees that refer to recently created \objects, etc.?
+  
+\item What should be the additional API surface for an ``IO-Encode,'' e.g.~how to handle random numbers, time, filesystem and network access, user interaction?
 
-\item When/how to garbage-collect from the storage or memoization cache
+\item How to implement the WASI API in a Wasm module, in terms of the Fixpoint API?
+  
+\item When/how to garbage-collect from the storage or memoization and trace caches?
 
 \item How to share reproducible computations between users---perhaps by extending the Git on-disk format?
   
-\item Execution policy language separate from definition of a
+\item Execution strategy language separate from definition of a
   computation (to describe data placement / parallelization policy,
-  garbage-collection policy, and when to give read-write access to
-  inputs to a function because a \valuex will not be referenced again)
-
+  garbage-collection policy, etc.)?
+  
 \item Does the approach to lazy inputs really ensure that a \thunk can
   always be replaced by (1) any other \thunk that refers to the same
   \valuex, or (2) the referred-to \valuex, without ever altering the
@@ -348,8 +368,12 @@ the original $f$.
 
 \item Can we run \texttt{clang.wasm} within Fixpoint, to compile
   \texttt{clang} into Wasm, to make the system self-hosting? Can we bootstrap an entire Linux distribution
-  this way (perhaps following the Guix bootstrap dependency graph)?
- 
+  this way, perhaps following the Guix bootstrap dependency graph?
+
+\item What's the right API for higher-level languages (e.g., Rust or C++) to expose constructs like, e.g.~a parallel map that compiles into an \encode with many inputs?
+
+\item What should a ``visual debugger'' look like to inspect the computation flow and provenance of computed outputs?
+  
 \item \ldots
   
 \end{enumerate}
