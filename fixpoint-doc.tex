@@ -26,6 +26,8 @@
 \newcommand{\names}{\textrm{Name}s\xspace}
 \newcommand{\tree}{\textrm{Tree}\xspace}
 \newcommand{\trees}{\textrm{Tree}s\xspace}
+\newcommand{\handle}{\textrm{Handle}\xspace}
+\newcommand{\handles}{\textrm{Handle}s\xspace}
 \newcommand{\bs}{\vspace{\baselineskip}}
 
 \newcommand{\eval}{\textsf{eval}}
@@ -34,7 +36,7 @@
 
 
 \begin{document}
-%\thispagestyle{empty}
+\thispagestyle{empty}
 
 \textbf{Computation in Fixpoint}\newline
 Yuhan Deng, Sadjad Fouladi, Keith Winstein, with commentary by Amit Levy (last updated: 11/5/2022)
@@ -43,7 +45,7 @@ Yuhan Deng, Sadjad Fouladi, Keith Winstein, with commentary by Amit Levy (last u
 
 Fixpoint is a ``deterministic operating system'' that roughly follows
 the design of the SICP
-\href{https://mitpress.mit.edu/sites/default/files/sicp/full-text/book/book-Z-H-27.html#\%_sec_4.2.2}{``Interpreter
+\href{https://mitp-content-server.mit.edu/books/content/sectbyfn/books_pres_0/6515/sicp.zip/full-text/book/book-Z-H-27.html#%_sec_4.2.2}{``Interpreter
   with Lazy Evaluation''}. The data model is similar to a Git
 repository, one that can also represent computational relations
 between content-addressed objects: e.g., ``blob \texttt{<x>} is the
@@ -51,17 +53,13 @@ output of computation \texttt{<y>} given tree \texttt{<z>} as input.''
 The intention is to support a range of applications, including
 pre-existing \textsc{posix} programs, and for the OS to provide
 ``determinism-safety'': program execution is referentially
-transparent, and irreproducibility is considered an OS bug, even
-across different computers.\footnote{Not \emph{everything} can be
-referentially transparent---IO has to happen somewhere. Fixpoint does have a
-context where IO is permitted, akin to an ``unsafe'' block in Rust,
-but the intention is to let programmers and users constrain and
-delimit the non-deterministic parts of a program, rather than allowing
-unrestricted IO to happen anywhere.} We envision cloud-computing
-providers offering ``computation as a service'': the customer provides
-a description of a computation, and the provider returns the answer
-for a fee, perhaps backed by an insurance policy that guarantees
-correctness.
+transparent\footnote{Except for explicitly marked ``unsafe''
+functions, which are allowed to be nondeterministic and perform IO.},
+and irreproducibility is considered an OS bug, even across different
+computers. We envision cloud-computing providers offering
+``computation as a service'': the customer provides a description of a
+computation, and the provider returns the answer for a fee, perhaps
+backed by an insurance policy that guarantees correctness.
 
 \bs
 
@@ -79,23 +77,14 @@ semantics of evaluation.
 
 \subsection{\objects: \blobs, \trees, and \thunks}
 
-The basic type is an \object. Each \object is immutable, has one canonical representation, and is either:
+The basic type is an \object. Each \object is immutable and has one canonical representation, and is either:
 
-\begin{itemize}[itemsep=0pt]
+\begin{itemize}[itemsep=0pt,topsep=0pt]
 \item a \valuex, which is either:
-\begin{itemize}[itemsep=0pt]
+\begin{itemize}[itemsep=0pt,topsep=0pt]
   \item a \blob: a vector of bytes, or
 
-  \item a \tree: a vector of entries, each containing:
-
-    \begin{enumerate}[topsep=0pt, itemsep=0pt]
-    \item a \name, and
-    \item two bits of metadata:
-      \begin{itemize}
-      \item a bit indicating whether the entry is ``accessible'' or ``inaccessible,'' and
-      \item a bit indicating whether the entry is ``strict'' or ``lazy,''
-      \end{itemize}
-      \end{enumerate}
+  \item a \tree: a vector of \handles or ``entries.''
 \end{itemize}
 
 \item or a \thunk, which represents a particular \valuex by specifying
@@ -118,6 +107,16 @@ indistinguishable.
 
 %\names are opaque; 
 
+\enlargethispage{1 cm}
+
+\subsection{\handles}
+
+A \handle represents an \object with capabilities. Each \handle contains a \name and two bits of metadata:
+      \begin{itemize}[itemsep=0pt]
+      \item whether the \handle is ``accessible'' or ``inaccessible,'' and
+      \item whether the \handle is ``strict'' or ``lazy.''
+      \end{itemize}
+    
 \subsection{\encodes}
 
 An \encode\footnote{For ``Explicit Named Computation On Data or
@@ -130,6 +129,8 @@ function, which is either:
 \item A \blob that contains a Wasm module, or
 \item An \encode.
 \end{itemize}
+
+The entire \encode, including any further entries, is passed to the function at runtime.
 
 \begin{comment}
 At evaluation-time, the function can read any ``accessible \valuex'' in
@@ -194,9 +195,9 @@ an \object and returns the \name of the resulting \valuex. For an
 
 \item If $x$ is a \tree, return a \tree with some entries modified. For each entry:
   \begin{enumerate}[topsep=0pt, itemsep=0pt]
-    \item Let $y$ be the \object that the entry refers to.
-    \item If strict, replace with \eval($y$) and set entry to accessible.
-    \item Otherwise, if accessible, replace with \force($y$).
+    \item Let $y$ be the \object that the \handle refers to.
+    \item If strict, replace with \eval($y$) and set to accessible.
+    \item Otherwise, if accessible, replace $y$ with \force($y$).
     \item Otherwise leave the entry unchanged.
   \end{enumerate}
 
@@ -222,9 +223,9 @@ an \object and returns the \name of the resulting \valuex. For an
 
 \begin{enumerate}[itemsep=0pt]
 \item compute $y \leftarrow \eval(x)$
-\item call the Wasm module's entry function, passing it $y$ and providing host functions that let it:
+\item call the Wasm module's apply function, passing it $y$ and providing host functions that let it:
   \begin{itemize}[topsep=0pt, itemsep=0pt]
-  \item access any \valuex that's an accessible entry of $y$ (or in any \tree reachable from an accessible entry)
+  \item access any \valuex that's an accessible \handle of $y$ (or in any \tree reachable from an accessible \handle)
   \item create new \objects
   \item return an \object as its output
   \end{itemize}
@@ -282,8 +283,8 @@ We intend for the output of all computations to be invariant to:
 \end{itemize}
 
 As a result, functions cannot inspect the contents of \names or
-``inaccessible'' entries---a function cannot tell if a lazy entry has
-already been evaluated or not, or how \names refer to \objects.
+``inaccessible'' \handles---a function cannot tell if a lazy \handle
+has already been evaluated, or how \names refer to \objects.
 
 \section{Fix's interface to Wasm}
 \label{s:imports}
@@ -291,10 +292,9 @@ already been evaluated or not, or how \names refer to \objects.
 The Wasm module must export a function named {\tt \_fixpoint\_apply},
 of type \texttt{externref} $\rightarrow$ \texttt{externref}. Fix uses
 the \texttt{externref} type (which is opaque to Wasm) to represent a
-\tree entry (a \name plus accessibility and strictness bits). The
-function will be called with the \name of the \encode, marked
-accessible and strict. The \object named in the function's return
-value will be the result of \apply.
+\handle. The function will be called with the \name of the \encode,
+marked accessible and strict. The \object named in the function's
+return value will be the result of \apply.
 
 \bs
 
@@ -308,8 +308,8 @@ as imports. Each of these can be imported from the ``\texttt{fix}'' namespace:
   argument to the Wasm table numbered $N$. Future calls to
   \texttt{table.get}, \texttt{table.size}, or \texttt{table.copy}
   (referring to table $N$ as a source) will refer to the entries of
-  this \tree. The argument must describe an accessible, strict
-  entry. The table must:
+  this \tree. The argument must be an accessible, strict
+  \handle. The table must:
   \begin{itemize}[topsep=0pt, itemsep=0pt]
   \item Be exported under the name \texttt{ro\_table\_}$N$
   \item Not be exported under another name
@@ -321,7 +321,7 @@ as imports. Each of these can be imported from the ``\texttt{fix}'' namespace:
 \item \texttt{attach\_blob\_ro\_mem\_}$N$ (\texttt{externref} $\rightarrow$ []): The function ``attaches''
   the \blob given in the argument to the Wasm memory numbered $N$. Future calls to
   *.load instructions as well as \texttt{memory.size} or \texttt{memory.copy} (referring to memory $N$ as a source)
-  will refer to the bytes of this \blob. The argument must describe an accessible, strict entry. The memory must:
+  will refer to the bytes of this \blob. The argument must describe an accessible, strict \handle. The memory must:
     \begin{itemize}[topsep=0pt, itemsep=0pt]
   \item Be exported under the name \texttt{ro\_mem\_}$N$
   \item Not be exported under another name
@@ -342,7 +342,7 @@ as imports. Each of these can be imported from the ``\texttt{fix}'' namespace:
   memory $N$ and creates a \blob whose length in bytes is given in
   the \texttt{i32} argument. This length must be less than or equal to
   the data length of memory $N$ (an integral number of pages). Returns
-  an accessible strict entry naming the newly created \blob. The
+  an accessible strict \handle naming the newly created \blob. The
   memory must be exported under the name \texttt{rw\_mem\_}$N$.
 
 \item \texttt{create\_blob\_}\emph{type} (\emph{type} $\rightarrow$
@@ -355,12 +355,30 @@ as imports. Each of these can be imported from the ``\texttt{fix}'' namespace:
   $\rightarrow$ \texttt{externref}): The function ``detaches'' the
   contents of table $N$ and creates a \tree whose length in entries is
   given in the \texttt{i32} argument. This length must be less than or
-  equal to the length of table $N$. Returns an accessible strict entry
+  equal to the length of table $N$. Returns an accessible strict \handle
   naming the newly created \tree. The table must be exported under the
   name \texttt{rw\_table\_}$N$.
-  
-\end{itemize}
 
+\item \texttt{create\_thunk} (\texttt{externref} $\rightarrow$
+  \texttt{externref}): Given a \tree, returns a corresponding \thunk as an inaccessible \handle.
+
+\item \texttt{get-access} (\texttt{externref} $\rightarrow$ \texttt{i32}): Retrieve strictness and accessibility bits from a \handle.
+
+\item \texttt{value-type} (\texttt{externref} $\rightarrow$ \texttt{i32}): Retrieve type (\blob or \tree) from an accessible \handle. Traps if \handle is inaccessible.
+
+\item \texttt{set-inaccessible} (\texttt{externref} $\rightarrow$ \texttt{externref}): Returns a modified \handle with accessibility set to false.
+  
+\item \texttt{set-strictness} (\texttt{externref}, \texttt{i32} $\rightarrow$ \texttt{externref}): Returns a modified \handle with strictness set as specified. Traps if \handle is accessible+lazy and attempt is made to set
+  it to strict.
+
+\item \texttt{value-length} (\texttt{externref} $\rightarrow$ \texttt{i32}): Given an accessible \handle, returns the length (in bytes or number of entries) of the corresponding \valuex.
+
+\item \texttt{get-lazy-entry} (\texttt{externref}, \texttt{i32}
+  $\rightarrow$ \texttt{externref}): Given an accessible (possibly
+  lazy) \handle to a \tree, return an inaccessible lazy \handle to the
+  \object given by the index argument. Traps if the \handle is
+  inaccessible or if the index is out of range.
+\end{itemize}
 
 \section{Examples}
 
