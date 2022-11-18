@@ -6,37 +6,38 @@
 
 \usepackage[pdfborder={.25 .25 .25}]{hyperref}
 
+\usepackage{comment}
+
 \urlstyle{rm}
 
 \usepackage{microtype}
 
-\newcommand{\blob}{\textbf{Blob}\xspace}
-\newcommand{\blobs}{\textbf{Blob}s\xspace}
-\newcommand{\valuex}{\textbf{Value}\xspace}
-\newcommand{\valuexs}{\textbf{Value}s\xspace}
-\newcommand{\object}{\textbf{Object}\xspace}
-\newcommand{\objects}{\textbf{Object}s\xspace}
-\newcommand{\encode}{\textbf{Encode}\xspace}
-\newcommand{\thunk}{\textbf{Thunk}\xspace}
-\newcommand{\thunks}{\textbf{Thunk}s\xspace}
-\newcommand{\blobthunk}{\textbf{Blob Thunk}\xspace}
-\newcommand{\blobthunks}{\textbf{Blob Thunk}s\xspace}
-\newcommand{\treethunk}{\textbf{Tree Thunk}\xspace}
-\newcommand{\treethunks}{\textbf{Tree Thunk}s\xspace}
-\newcommand{\encodes}{\textbf{Encode}s\xspace}
-\newcommand{\name}{\textbf{Name}\xspace}
-\newcommand{\names}{\textbf{Name}s\xspace}
-\newcommand{\tree}{\textbf{Tree}\xspace}
-\newcommand{\trees}{\textbf{Tree}s\xspace}
-\newcommand{\pathx}{\textbf{Path}\xspace}
-\newcommand{\pathxs}{\textbf{Path}s\xspace}
+\newcommand{\blob}{\textrm{Blob}\xspace}
+\newcommand{\blobs}{\textrm{Blob}s\xspace}
+\newcommand{\valuex}{\textrm{Value}\xspace}
+\newcommand{\valuexs}{\textrm{Value}s\xspace}
+\newcommand{\object}{\textrm{Object}\xspace}
+\newcommand{\objects}{\textrm{Object}s\xspace}
+\newcommand{\encode}{\textrm{Encode}\xspace}
+\newcommand{\thunk}{\textrm{Thunk}\xspace}
+\newcommand{\thunks}{\textrm{Thunk}s\xspace}
+\newcommand{\encodes}{\textrm{Encode}s\xspace}
+\newcommand{\name}{\textrm{Name}\xspace}
+\newcommand{\names}{\textrm{Name}s\xspace}
+\newcommand{\tree}{\textrm{Tree}\xspace}
+\newcommand{\trees}{\textrm{Tree}s\xspace}
 \newcommand{\bs}{\vspace{\baselineskip}}
+
+\newcommand{\eval}{\textsf{eval}}
+\newcommand{\apply}{\textsf{apply}}
+\newcommand{\force}{\textsf{force}}
+
 
 \begin{document}
 %\thispagestyle{empty}
 
-\textbf{Computation in the Fixpoint OS}\newline
-Yuhan Deng, Sadjad Fouladi, Keith Winstein, with commentary by Amit Levy (last updated: 1/14/2022)
+\textbf{Computation in Fixpoint}\newline
+Yuhan Deng, Sadjad Fouladi, Keith Winstein, with commentary by Amit Levy (last updated: 11/5/2022)
 
 \bs
 
@@ -62,12 +63,21 @@ a description of a computation, and the provider returns the answer
 for a fee, perhaps backed by an insurance policy that guarantees
 correctness.
 
-%\vspace{0.5\baselineskip}
-%{\Large \textbf{1. Types}}
+\bs
 
-\section{Types}
+The vision for this system was described in Yuhan Deng, Angela
+Montemayor, Amit Levy, and Keith Winstein, ``Computation-Centric
+Networking,'' \textit{HotNets '22}, Austin, Texas (2022). In this
+document, we describe the detailed syntax and semantics of Fix and
+Fixpoint.
 
-\subsection{\objects, \valuexs, and \thunks}
+\section{Fix: a language of computations-on-data}
+
+Fix is a general representation for describing deterministic
+computations-on-data. Fix defines a number of data types and the
+semantics of evaluation.
+
+\subsection{\objects: \blobs, \trees, and \thunks}
 
 The basic type is an \object. Each \object is immutable, has one canonical representation, and is either:
 
@@ -80,41 +90,48 @@ The basic type is an \object. Each \object is immutable, has one canonical repre
 
     \begin{enumerate}[topsep=0pt, itemsep=0pt]
     \item a \name, and
-
-    \item a boolean indicating whether the entry is ``strict'' or ``lazy,''
-    \end{enumerate}
+    \item two bits of metadata:
+      \begin{itemize}
+      \item a bit indicating whether the entry is ``accessible'' or ``inaccessible,'' and
+      \item a bit indicating whether the entry is ``strict'' or ``lazy,''
+      \end{itemize}
+      \end{enumerate}
 \end{itemize}
 
 \item or a \thunk, which represents a particular \valuex by specifying
   a way to compute it. Internally, a \thunk contains the \name of an \encode.
 \end{itemize}
 
-\object identity is defined by equality of the canonical representation.
+%\object identity is defined by equality of the canonical representation.
 
 \subsection{\names}
 
-A \name is a string that identifies a particular \object by means of an unambiguous
-reference, either:
-    \begin{itemize}[itemsep=0pt]
-    \item a ``canonical name'': the \textsc{sha-256} hash of the \object's canonical representation,
-    \item a ``local name'': a locally generated unique ID that identifies an \object, or
-    \item a ``literal'': the canonical representation of the \object itself.
-    \end{itemize}
+A \name is an opaque identifier. It identifies a particular
+\object. Two \names that identify the same \object are equivalent and
+indistinguishable.
 
-\names are opaque; two \names that identify the same \object are equivalent for purposes of computation.
+%\begin{itemize}[itemsep=0pt]
+%    \item a ``canonical name'': the \textsc{sha-256} hash of the \object's canonical representation,
+%    \item a ``local name'': a locally generated unique ID that identifies an \object, or
+%    \item a ``literal'': the canonical representation of the \object itself.
+%    \end{itemize}
+
+%\names are opaque; 
 
 \subsection{\encodes}
 
 An \encode\footnote{For ``Explicit Named Computation On Data or
-\encodes.''} is a \tree that describes the application of a function
-to inputs, producing an \object as output. The first entry specifies
-the resource limits at runtime (e.g., maximum pages of mutable memory). The second entry
-species the function, which is either:
+\encodes.''} is a \tree in a particular format. It describes the
+application of a function to inputs, producing an \object as
+output. The first entry specifies the resource limits at runtime
+(e.g., maximum pages of mutable memory). The second entry species the
+function, which is either:
 \begin{itemize}[itemsep=0pt]
 \item A \blob that contains a Wasm module, or
 \item An \encode.
 \end{itemize}
 
+\begin{comment}
 At evaluation-time, the function can read any ``accessible \valuex'' in
 the \encode---which means any strict entry of the \encode, and any
 strict entry of an ``accessible'' \tree. A lazy entry refers to an
@@ -148,8 +165,9 @@ The system maintains several global mappings:
 
 \item The ``trace cache'' maps a \name to a human-readable string.
 \end{itemize}
+\end{comment}
 
-\section{Operations}
+\section{Fix's operations: \eval{}, \force{}, and \apply{}}
 
 \begin{quote}
 \begin{quote}
@@ -160,82 +178,189 @@ different names.} (David Clark, 1982\footnote{\href{https://www.rfc-editor.org/r
 \end{quote}
 \end{quote}
 
-\subsection{Forcing}
+Fix defines three operations: \eval{} (\object $\rightarrow$ \valuex),
+\force{} (\object $\rightarrow$ \valuex), and \apply{} (\tree
+$\rightarrow$ \object). Each of these is deterministic and can be
+memoized. In addition to the listed type signature, each of these can
+also trap and fail, which fails any dependent computation in turn.
 
-``Forcing'' is an function from \objects to \valuexs:
+\subsection{Evaluation}
 
+\eval\xspace transforms \objects to \valuexs. It takes the \name of
+an \object and returns the \name of the resulting \valuex. For an
+\object $x$, \eval($x$) is defined as:
 \begin{itemize}[itemsep=0pt]
-\item Forcing a \blob is the identity operation.
+\item If $x$ is a \blob, return $x$.
 
-\item Forcing a \tree forces each of its strict entries, replacing the
-  entry's \name field with the \name of the resulting \valuex.
+\item If $x$ is a \tree, return a \tree with some entries modified. For each entry:
+  \begin{enumerate}[topsep=0pt, itemsep=0pt]
+    \item Let $y$ be the \object that the entry refers to.
+    \item If strict, replace with \eval($y$) and set entry to accessible.
+    \item Otherwise, if accessible, replace with \force($y$).
+    \item Otherwise leave the entry unchanged.
+  \end{enumerate}
 
-\item Forcing a \thunk recursively reduces it to its referred-to \valuex.
+\item If $x$ is a \thunk, return \eval(\force($x$)).
 \end{itemize}
 
-\subsection{Reducing a \thunk (one step)}
+\subsection{Forcing}
 
-``Reducing'' a \thunk transforms it to another \thunk or to the
-eventual \valuex. To do this, the system will:
+\force{} transforms \objects to \valuexs.  For an \object $x$, \force($x$) is defined as:
 \begin{itemize}[itemsep=0pt]
-\item retrieve a memoized reduction from the memoization cache, or
-\item compute the reduction, by:
-  \begin{enumerate}[topsep=0pt, itemsep=0pt]
-  \item evaluating the \encode that the \thunk names,
-  \item returning the \encode's output \object, and
-  \item optionally inserting an entry into the memoization cache from the \thunk to the output \object.
+\item If $x$ is a \valuex, return $x$.
+
+\item If $x$ is a \thunk:
+  \begin{enumerate}[topsep=0pt,itemsep=0pt]
+  \item Let $y$ be the \name of the \tree that $x$ contains.
+  \item Return $\force(\apply(y))$.
   \end{enumerate}
 \end{itemize}
 
-\subsection{Forcing a \thunk}
+\subsection{Application}
 
-Forcing a \thunk means:
+\apply{} transforms \trees (in \encode format) to \objects. For a \tree $x$ in \encode format, \apply($x$) is defined as:
+
 \begin{enumerate}[itemsep=0pt]
-\item reducing it, and
-\item if the resulting \object is a \thunk, forcing that \thunk in turn.
+\item compute $y \leftarrow \eval(x)$
+\item call the Wasm module's entry function, passing it $y$ and providing host functions that let it:
+  \begin{itemize}[topsep=0pt, itemsep=0pt]
+  \item access any \valuex that's an accessible entry of $y$ (or in any \tree reachable from an accessible entry)
+  \item create new \objects
+  \item return an \object as its output
+  \end{itemize}
+  (A more precise version of this interface is described in Section~\ref{s:imports}.)
+\item The return value from the Wasm function is the value of \apply($x$).
+\item If $x$ is not in \encode format, or executing the Wasm function traps, \apply{} fails.
 \end{enumerate}
-
-\subsection{Evaluating an \encode}
-
-To evaluate an \encode, the system will:
-\begin{enumerate}[itemsep=0pt]
-\item force the \encode itself, transforming each strict entry into a \valuex
-\item run the Wasm module's entry function, providing it with imported host functions that let it:
-\begin{itemize}[itemsep=0pt, topsep=0pt]
-\item access any ``accessible \valuex'' from the \encode,
-\item create new \objects (including \trees that reference lazy inputs),
-\item designate an \object as its output,
-\item steal the storage backing an accessible \valuex and mutate it to create a new \valuex\footnote{The OS
-might implement this by making a copy of the \valuex, or by actually allowing
-the function to mutate the only copy---based on a guess that the \valuex won't be referenced
-again and can be recomputed-on-demand if that guess is wrong.}, and
-\item insert entries into the trace cache that attach human-readable names to the \objects it creates.
-\end{itemize}
+      
+      
+  \begin{comment}
+  \begin{itemize}[itemsep=0pt, topsep=0pt]
+  \item attach $y$ to an \texttt{externref}-typed Wasm table, meaning its entries become \texttt{externref} elements of the table,
+  \item given any accessible strict \texttt{externref}, attach the referenced \blob or \tree to a Wasm memory or table,
+  \item given an accessible lazy \texttt{externref}, get the type (\blob or \tree) and
+    \begin{itemize}
+    \item if a \blob, attach it to a Wasm memory,
+    \item if a \tree, get its size and retrieve any entry (as an inaccessible lazy entry) by index
+    \end{itemize}
+  \item create new \objects (including \trees that reference inaccessible inputs),
+  \item return an \object as its output
+  \item steal the storage backing an accessible \valuex and mutate it to create a new \valuex\footnote{The OS
+  might implement this by making a copy of the \valuex, or by actually allowing
+  the function to mutate the only copy---based on a guess that the \valuex won't be referenced
+  again and can be recomputed-on-demand if that guess is wrong.}, and
+  \item modify \tree entries by:
+    \begin{itemize}[itemsep=0pt, topsep=0pt]
+    \item making strict entries lazy
+    \item making accessible entries inaccessible
+    \item making inaccessible+lazy entries inaccessible+strict
+    \end{itemize}
+  \item insert entries into the trace cache that attach human-readable names to the \objects it creates.
+  \end{itemize}
 \end{enumerate}
+\end{comment}
 
+\begin{comment}
 The storage is never \emph{required} to compute the \textsc{sha-256} hash of an
 \object. However, to avoid storing duplicate long-lived \valuexs, the
 runtime will probably choose to hash any long-lived \object that is
 identified by a literal key (including a \thunk), and replace the key
 with the canonical name. If the original key was a \thunk, this can be
 moved to an entry in the memoization cache.
+\end{comment}
 
-\section{Safe transformations}
+\section{Fix's invariants and safe transformations}
 
 We intend for the output of all computations to be invariant to:
 
 \begin{itemize}[itemsep=0pt]
 
-\item replacing any \thunk with its reduction, or
+\item replacing any \thunk $x$ with its forced result, or
 
 \item replacing any \name with another \name that identifies the same \object.
 
 \end{itemize}
 
 As a result, functions cannot inspect the contents of \names or
-``inaccessible'' (lazy) entries---a function cannot tell if a lazy
-entry has already been forced or not, or if an \object has been hashed
-(to refer to it by its \textsc{sha-256} canonical name) or not.
+``inaccessible'' entries---a function cannot tell if a lazy entry has
+already been evaluated or not, or how \names refer to \objects.
+
+\section{Fix's interface to Wasm}
+\label{s:imports}
+
+The Wasm module must export a function named {\tt \_fixpoint\_apply},
+of type \texttt{externref} $\rightarrow$ \texttt{externref}. Fix uses
+the \texttt{externref} type (which is opaque to Wasm) to represent a
+\tree entry (a \name plus accessibility and strictness bits). The
+function will be called with the \name of the \encode, marked
+accessible and strict. The \object named in the function's return
+value will be the result of \apply.
+
+\bs
+
+To give the Wasm module access to the \encode and the ability to
+create new \objects, Fix makes available the following host functions
+as imports. Each of these can be imported from the ``\texttt{fix}'' namespace:
+
+\begin{itemize}
+\item \texttt{attach\_tree\_ro\_table\_}$N$ (\texttt{externref}
+  $\rightarrow$ []): This function ``attaches'' the \tree given in the
+  argument to the Wasm table numbered $N$. Future calls to
+  \texttt{table.get}, \texttt{table.size}, or \texttt{table.copy}
+  (referring to table $N$ as a source) will refer to the entries of
+  this \tree. The argument must describe an accessible, strict
+  entry. The table must:
+  \begin{itemize}[topsep=0pt, itemsep=0pt]
+  \item Be exported under the name \texttt{ro\_table\_}$N$
+  \item Not be exported under another name
+  \item Never be the target of an instruction that would mutate it (\texttt{table.set},
+    \texttt{table.init}, \texttt{table.fill}, \texttt{table.copy}, \texttt{table.grow}).
+  \end{itemize}
+  These table properties can be checked statically upfront.
+
+\item \texttt{attach\_blob\_ro\_mem\_}$N$ (\texttt{externref} $\rightarrow$ []): The function ``attaches''
+  the \blob given in the argument to the Wasm memory numbered $N$. Future calls to
+  *.load instructions as well as \texttt{memory.size} or \texttt{memory.copy} (referring to memory $N$ as a source)
+  will refer to the bytes of this \blob. The argument must describe an accessible, strict entry. The memory must:
+    \begin{itemize}[topsep=0pt, itemsep=0pt]
+  \item Be exported under the name \texttt{ro\_mem\_}$N$
+  \item Not be exported under another name
+  \item Never be the target of an instruction that would mutate it (\texttt{*.store},
+    \texttt{memory.init}, \texttt{memory.fill}, \texttt{memory.copy}, \texttt{memory.grow}).
+  \end{itemize}
+  These memory properties can be checked statically upfront.
+
+\item \texttt{size\_ro\_mem\_}$N$ (\texttt{externref} $\rightarrow$
+  \texttt{i32}): Returns the size of the \blob attached to memory $N$,
+  in bytes (or zero). This differs from the \texttt{memory.size}
+  instruction, which must return an integer number of
+  64~KiB~pages. The read-only memory must meet the same statically
+  checked requirements as above.
+
+\item \texttt{create\_blob\_rw\_mem\_}$N$ (\texttt{i32} $\rightarrow$
+  \texttt{externref}): The function ``detaches'' the contents of
+  memory $N$ and creates a \blob whose length in bytes is given in
+  the \texttt{i32} argument. This length must be less than or equal to
+  the data length of memory $N$ (an integral number of pages). Returns
+  an accessible strict entry naming the newly created \blob. The
+  memory must be exported under the name \texttt{rw\_mem\_}$N$.
+
+\item \texttt{create\_blob\_}\emph{type} (\emph{type} $\rightarrow$
+  \texttt{externref}): Same as above, but creates the \blob from an
+  argument given on the stack instead of from a read-write memory. The
+  \emph{type} can be any of the numeric or vector types of Wasm: {\tt
+    i32}, {\tt i64}, {\tt f32}, {\tt f64}, or {\tt v128}.
+
+\item \texttt{create\_tree\_rw\_table\_}$N$ (\texttt{i32}
+  $\rightarrow$ \texttt{externref}): The function ``detaches'' the
+  contents of table $N$ and creates a \tree whose length in entries is
+  given in the \texttt{i32} argument. This length must be less than or
+  equal to the length of table $N$. Returns an accessible strict entry
+  naming the newly created \tree. The table must be exported under the
+  name \texttt{rw\_table\_}$N$.
+  
+\end{itemize}
+
 
 \section{Examples}
 
