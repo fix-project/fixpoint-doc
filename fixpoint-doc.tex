@@ -213,7 +213,7 @@ an \object and returns the \name of the resulting \valuex. For an
 \item If $x$ is a \thunk:
   \begin{enumerate}[topsep=0pt,itemsep=0pt]
   \item Let $y$ be the \name of the \tree that $x$ contains.
-  \item Return $\force(\apply(y))$.
+  \item Return $\force(\apply(\eval(y)))$.
   \end{enumerate}
 \end{itemize}
 
@@ -222,10 +222,9 @@ an \object and returns the \name of the resulting \valuex. For an
 \apply{} transforms \trees (in \encode format) to \objects. For a \tree $x$ in \encode format, \apply($x$) is defined as:
 
 \begin{enumerate}[itemsep=0pt]
-\item compute $y \leftarrow \eval(x)$
-\item call the Wasm module's apply function, passing it $y$ and providing host functions that let it:
+\item call the Wasm module's apply function, passing it $x$ and providing host functions that let it:
   \begin{itemize}[topsep=0pt, itemsep=0pt]
-  \item access any \valuex that's an accessible \handle of $y$ (or in any \tree reachable from an accessible \handle)
+  \item access any \valuex that's an accessible \handle of $x$ (or in any \tree reachable from an accessible \handle)
   \item create new \objects
   \item return an \object as its output
   \end{itemize}
@@ -362,7 +361,7 @@ as imports. Each of these can be imported from the ``\texttt{fix}'' namespace:
 \item \texttt{create\_thunk} (\texttt{externref} $\rightarrow$
   \texttt{externref}): Given a \tree, returns a corresponding \thunk as an inaccessible \handle.
 
-\item \texttt{get-access} (\texttt{externref} $\rightarrow$ \texttt{i32}): Retrieve strictness and accessibility bits from a \handle.
+\item \texttt{access} (\texttt{externref} $\rightarrow$ \texttt{i32}): Retrieve strictness and accessibility bits from a \handle.
 
 \item \texttt{value-type} (\texttt{externref} $\rightarrow$ \texttt{i32}): Retrieve type (\blob or \tree) from an accessible \handle. Traps if \handle is inaccessible.
 
@@ -371,9 +370,9 @@ as imports. Each of these can be imported from the ``\texttt{fix}'' namespace:
 \item \texttt{set-strictness} (\texttt{externref}, \texttt{i32} $\rightarrow$ \texttt{externref}): Returns a modified \handle with strictness set as specified. Traps if \handle is accessible+lazy and attempt is made to set
   it to strict.
 
-\item \texttt{value-length} (\texttt{externref} $\rightarrow$ \texttt{i32}): Given an accessible \handle, returns the length (in bytes or number of entries) of the corresponding \valuex.
+\item \texttt{length} (\texttt{externref} $\rightarrow$ \texttt{i32}): Given an accessible \handle, returns the length (in bytes or number of entries) of the corresponding \valuex.
 
-\item \texttt{get-lazy-entry} (\texttt{externref}, \texttt{i32}
+\item \texttt{lazy-entry} (\texttt{externref}, \texttt{i32}
   $\rightarrow$ \texttt{externref}): Given an accessible (possibly
   lazy) \handle to a \tree, return an inaccessible lazy \handle to the
   \object given by the index argument. Traps if the \handle is
